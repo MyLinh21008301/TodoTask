@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <title>EazyStay – Test Auth</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Google Identity Services -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 860px; margin: 32px auto; padding: 0 16px; }
+    h1 { margin-bottom: 4px; }
+    .card { border: 1px solid #ddd; border-radius: 10px; padding: 16px; margin: 16px 0; }
+    .row { display: flex; gap: 12px; margin: 8px 0; flex-wrap: wrap; }
+    label { min-width: 120px; display: inline-block; }
+    input { padding: 8px; min-width: 260px; }
+    button { padding: 8px 14px; border: 1px solid #ccc; border-radius: 8px; cursor: pointer; }
+    pre { background:#f7f7f7; padding:10px; border-radius:8px; overflow:auto; }
+    .ok { color: #0a7c2f; }
+    .err { color: #b00020; }
+    .header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    #gsi-btn { margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>EazyStay – Test Auth (local + Google)</h1>
+    <a href="/health" target="_blank">/health</a>
+  </div>
+
+  <div class="card">
+    <h2>1 Google Sign-In</h2>
+    <div id="gsi-ready" class="ok" hidden>Google ClientID loaded ✅</div>
+    <div id="gsi-btn"></div>
+    <button id="btn-google-one-tap">One Tap (try)</button>
+    <div id="google-msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>2 Register (local)</h2>
+    <div class="row"><label>Email</label><input id="r-email" value="user1@test.com"></div>
+    <div class="row"><label>Password</label><input id="r-pass" type="password" value="Secret@123"></div>
+    <div class="row"><label>First name</label><input id="r-fn" value="User"></div>
+    <div class="row"><label>Last name</label><input id="r-ln" value="One"></div>
+    <button id="btn-register">Register</button>
+    <div id="register-msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>3 Login (local)</h2>
+    <div class="row"><label>Email</label><input id="l-email" value="user1@test.com"></div>
+    <div class="row"><label>Password</label><input id="l-pass" type="password" value="Secret@123"></div>
+    <button id="btn-login">Login</button>
+    <div id="login-msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>4 Token & Actions</h2>
+    <div class="row">
+      <button id="btn-refresh">Refresh access token</button>
+      <button id="btn-logout">Logout</button>
+    </div>
+    <h3>Access Token</h3>
+    <pre id="access"></pre>
+    <h3>Last Response</h3>
+    <pre id="resp"></pre>
+  </div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let ACCESS_TOKEN = '';
+
+  function show(el, msg, ok=true) {
+    el.innerHTML = `<div class="${ok ? 'ok':'err'}">${ok ? '✅':'❌'} ${msg}</div>`;
+  }
+  function dump(obj) { $('resp').textContent = JSON.stringify(obj, null, 2); }
+  function setAccess(tok) { ACCESS_TOKEN = tok || ''; $('access').textContent = ACCESS_TOKEN; }
+
+  // ====== GOOGLE ======
+  let GOOGLE_CLIENT_ID = '';
+
+  async function loadConfig() {
+    const res = await fetch('/api/auth/config');
+    const json = await res.json();
+    GOOGLE_CLIENT_ID = json.googleClientId || '';
+    if (GOOGLE_CLIENT_ID) $('gsi-ready').hidden = false;
+    initGoogle();
+  }
+
+  function initGoogle() {
+    if (!window.google || !GOOGLE_CLIENT_ID) return;
+    google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: handleGoogleCredential,
+      ux_mode: 'popup'
+    });
+    // Render button
+    google.accounts.id.renderButton($('gsi-btn'), { theme: 'outline', size: 'large', shape: 'pill', text: 'signin_with' });
+  }
+
+  async function handleGoogleCredential(response) {
+    // response.credential chính là id_token (JWT) từ Google
+    const idToken = response.credential;
+    try {
+      const res = await fetch('/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ idToken })
+      });
+      const data = await res.json();
+      dump(data);
+      if (res.ok) {
+        setAccess(data.accessToken);
+        show($('google-msg'), 'Google login OK');
+      } else {
+        show($('google-msg'), data.message || 'Google login failed', false);
+      }
+    } catch (e) {
+      show($('google-msg'), e.message, false);
+    }
+  }
+
+  $('btn-google-one-tap').onclick = () => {
+    if (!window.google || !GOOGLE_CLIENT_ID) return alert('Google not ready');
+    google.accounts.id.prompt(); // thử One Tap (nếu đủ điều kiện)
+  };
+
+  // ====== REGISTER ======
+  $('btn-register').onclick = async () => {
+    const body = {
+      email: $('r-email').value,
+      password: $('r-pass').value,
+      first_name: $('r-fn').value,
+      last_name: $('r-ln').value
+    };
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    dump(data);
+    if (res.ok) {
+      setAccess(data.accessToken);
+      show($('register-msg'), 'Register OK');
+    } else {
+      show($('register-msg'), data.message || 'Register failed', false);
+    }
+  };
+
+  // ====== LOGIN ======
+  $('btn-login').onclick = async () => {
+    const body = { email: $('l-email').value, password: $('l-pass').value };
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    dump(data);
+    if (res.ok) {
+      setAccess(data.accessToken);
+      show($('login-msg'), 'Login OK');
+    } else {
+      show($('login-msg'), data.message || 'Login failed', false);
+    }
+  };
+
+  // ====== REFRESH ======
+  $('btn-refresh').onclick = async () => {
+    const res = await fetch('/api/auth/refresh', { method:'POST', credentials:'include' });
+    const data = await res.json();
+    dump(data);
+    if (res.ok) setAccess(data.accessToken);
+  };
+
+  // ====== LOGOUT ======
+  $('btn-logout').onclick = async () => {
+    const res = await fetch('/api/auth/logout', { method:'POST', credentials:'include' });
+    const data = await res.json();
+    dump(data);
+    if (res.ok) {
+      setAccess('');
+      document.cookie = 'rt=; Max-Age=0; path=/api/auth'; // dọn cục bộ
+    }
+  };
+
+  // boot
+  loadConfig();
+</script>
+</body>
+</html>
