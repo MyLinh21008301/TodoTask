@@ -2,6 +2,7 @@ import Listing from '../models/listing.model.js';
 import { createListingSchema, updateListingSchema, adminModerateSchema, publicSearchSchema, mineQuerySchema,
     reorderPhotosSchema, removePhotoSchema } from '../validators/listing.schema.js';
 import { toSlug } from '../utils/text.js';
+import mongoose from 'mongoose';
 
 
 // Host tạo listing (auto pending_review)

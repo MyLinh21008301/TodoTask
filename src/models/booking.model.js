@@ -1,11 +1,6 @@
 import mongoose from 'mongoose';
 const { Schema } = mongoose;
 
-const Money = new Schema({
-  amount: { type: Number, required: true, min: 0 },
-  currency: { type: String, default: 'VND' }
-}, { _id: false });
-
 const FileRef = new Schema({
   bucket: String, region: String, key: String, url: String,
   contentType: String, size: Number
@@ -33,14 +28,23 @@ const BookingSchema = new Schema({
   listingId: { type: Schema.Types.ObjectId, ref:'Listing', required: true, index: true },
   unitId:    { type: Schema.Types.ObjectId, ref:'ListingUnit' },
 
+  orderCode: { type: String, index: true, unique: true, sparse: true },
+
   status: {
     type: String,
     enum: [
-      'requested','host_accepted','host_rejected','expired',
-      'awaiting_payment','payment_processing','paid',
+      'requested',
+      'host_accepted', // Giữ lại để có thể dùng trong tương lai, dù luồng hiện tại bỏ qua
+      'host_rejected',
+      'expired',
+      'awaiting_payment',
+      'payment_processing',
+      'paid',
       'completed',
-      'cancelled_by_guest','cancelled_by_host',
-      'refund_pending','refunded'
+      'cancelled_by_guest',
+      'cancelled_by_host',
+      'refund_pending',
+      'refunded'
     ],
     default: 'requested',
     index: true
@@ -59,10 +63,10 @@ const BookingSchema = new Schema({
       service:  { type: Number, default: 0 }
     },
     taxPct:  { type: Number, default: 0 },
-    subtotal: Number,         // nights * base + fees
-    platformFee: Number,      // nền tảng thu
-    total:    Number,         // subtotal + tax + platformFee
-    hostPayout: Number        // tiền trả host (tuỳ công thức)
+    subtotal: Number,
+    platformFee: Number,
+    total:    Number,
+    hostPayout: Number
   },
 
   cancellationPolicy: {
@@ -91,11 +95,12 @@ const BookingSchema = new Schema({
   contract: {
     previewHash: String,
     signedByGuest: Signature,
+    signedByHost: Signature,
     executedAt: Date,
     pdf: FileRef
   },
 
-  expiresAt: Date,            // hạn thanh toán sau khi host accept
+  expiresAt: Date,
 
   requestedAt: { type: Date, default: Date.now },
   hostRespondedAt: Date,
@@ -104,9 +109,26 @@ const BookingSchema = new Schema({
   cancelReason: String
 }, { timestamps: true });
 
-BookingSchema.index({ listingId:1, checkinDate:1, checkoutDate:1, status:1 });
 BookingSchema.index({ guestId:1, status:1, createdAt:-1 });
 BookingSchema.index({ hostId:1, status:1, createdAt:-1 });
+
+// <<< SỬA ĐỔI DUY NHẤT NẰM Ở ĐÂY >>>
+// Index này sẽ ngăn chặn việc tạo 2 booking có cùng listingId và khoảng thời gian trùng nhau
+// nếu chúng ở trạng thái đã được xác nhận.
+BookingSchema.index(
+  {
+    listingId: 1,
+    checkinDate: 1,
+    checkoutDate: 1
+  },
+  {
+    unique: true,
+    partialFilterExpression: {
+      status: { $in: ['awaiting_payment', 'payment_processing', 'paid', 'completed'] }
+    }
+  }
+);
+
 
 const Booking = mongoose.model('Booking', BookingSchema);
 export default Booking;

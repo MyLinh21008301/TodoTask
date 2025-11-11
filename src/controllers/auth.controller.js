@@ -9,7 +9,7 @@ import { verifyGoogleIdToken } from '../utils/google.js';
 import { generateOtp, hashOtp } from '../utils/otp.js';
 import { sendOtpMail, sendResetOtpMail } from '../utils/mailer.js';
 import jwt from 'jsonwebtoken';
-
+import mongoose from 'mongoose';
 
 function setRefreshCookie(res, raw) {
   res.cookie('rt', raw, {
@@ -32,11 +32,17 @@ export const register = async (req, res, next) => {
       return res.status(409).json({ message: 'Email already in use' });
     }
 
-    // tạo mới hoặc revive user deleted
     const user = existed ?? new User();
+    
     user.email = email;
     user.first_name = body.first_name;
     user.last_name = body.last_name;
+    user.phone = body.phone;
+    user.dob = body.dob ? new Date(body.dob) : undefined;
+    user.address = body.address;
+    
+    user.gender = body.gender;
+
     user.roles = ['guest'];
     user.status = 'pending';
     user.auth = { local: { enabled: true }, google: existed?.auth?.google || null };
@@ -59,8 +65,6 @@ export const register = async (req, res, next) => {
     return res.status(201).json({ message: 'OTP sent to your email. Please verify.' });
   } catch (err) { next(err); }
 };
-
-/** ========== VERIFY EMAIL (nhập OTP) -> kích hoạt + cấp token ========== */
 export const verifyEmail = async (req, res, next) => {
   try {
     const { email, code } = verifyEmailSchema.parse(req.body);
@@ -87,7 +91,6 @@ export const verifyEmail = async (req, res, next) => {
     user.emailVerification = {};
     await user.save();
 
-    // cấp token (auto-login sau verify)
     const access = signAccessToken(user);
     const { raw: refresh } = await issueRefreshToken(user, { ip: req.ip, userAgent: req.headers['user-agent'] });
     setRefreshCookie(res, refresh);
@@ -96,7 +99,6 @@ export const verifyEmail = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-/** ========== RESEND OTP (có cooldown) ========== */
 export const resendOtp = async (req, res, next) => {
   try {
     const { email } = resendOtpSchema.parse(req.body);
@@ -130,7 +132,6 @@ export const resendOtp = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-/** ========== LOGIN LOCAL (chặn nếu chưa active) ========== */
 export const login = async (req, res, next) => {
   try {
     const { email, password } = loginSchema.parse(req.body);
@@ -305,39 +306,61 @@ export const resetPassword = async (req, res, next) => {
     const { new_password } = resetPasswordSchema.parse(req.body);
     const header = req.headers.authorization || '';
     const raw = header.startsWith('Bearer ') ? header.slice(7) : null;
+
+    // <<< 1. IN RA HEADER VÀ TOKEN NHẬN ĐƯỢC >>>
+    console.log("--- Yêu cầu Reset Mật khẩu ---");
+    console.log("Header Authorization:", header);
+    console.log("Token được trích xuất (raw):", raw);
+
     if (!raw) return res.status(401).json({ message: 'Missing reset token' });
 
     const RESET_SECRET = process.env.JWT_RESET_SECRET;
+
+    // <<< 2. IN RA SECRET ĐANG DÙNG >>>
+    console.log("Đang dùng RESET_SECRET:", RESET_SECRET ? RESET_SECRET.substring(0, 5) + '...' : 'KHÔNG TÌM THẤY SECRET!'); // Chỉ in một phần secret để bảo mật
+
     let payload;
     try {
-      payload = jwt.verify(raw, RESET_SECRET); 
-    } catch {
+      payload = jwt.verify(raw, RESET_SECRET);
+     
+      console.log("Xác thực token thành công. Payload:", payload);
+    } catch (err) { 
+      console.error("!!! LỖI XÁC THỰC TOKEN:", err.message);
+      console.error("Chi tiết token (đã giải mã):", jwt.decode(raw)); 
       return res.status(401).json({ message: 'Invalid reset token' });
     }
 
     const user = await User.findById(payload.sub);
+  
+    console.log("Tìm thấy user:", user ? user.email : 'Không tìm thấy user');
+    console.log("Session JTI đã lưu:", user?.passwordReset?.sessionJti);
+    console.log("Token JTI:", payload?.jti);
+    console.log("Session hết hạn lúc:", user?.passwordReset?.sessionExpiresAt);
+
     if (!user || !user.passwordReset?.sessionJti) {
-      return res.status(401).json({ message: 'Invalid reset session' });
+      console.log("Lý do từ chối: Không tìm thấy user hoặc không có session JTI được lưu.");
+      return res.status(401).json({ message: 'Invalid reset session (no JTI)' });
     }
     if (user.passwordReset.sessionJti !== payload.jti) {
-      return res.status(401).json({ message: 'Invalid reset session' });
+       console.log("Lý do từ chối: JTI không khớp.");
+      return res.status(401).json({ message: 'Invalid reset session (JTI mismatch)' });
     }
     if (new Date() > new Date(user.passwordReset.sessionExpiresAt)) {
+      console.log("Lý do từ chối: Session đã hết hạn.");
       return res.status(401).json({ message: 'Reset session expired' });
     }
 
     // Đặt mật khẩu mới
     await user.setPassword(new_password);
-    // Vô hiệu hoá trạng thái reset
     user.passwordReset = {};
     await user.save();
+    console.log("Đặt lại mật khẩu thành công cho:", user.email);
 
-    // Tuỳ chọn: revoke toàn bộ refresh tokens hiện tại
     await RefreshToken.updateMany({ user: user._id, revokedAt: { $exists: false } }, { $set: { revokedAt: new Date() } });
 
     return res.json({ message: 'Password has been updated. Please log in again.' });
-  } catch (err) { next(err); }
+  } catch (err) {
+    console.error("Lỗi trong hàm resetPassword:", err);
+    next(err);
+  }
 };
-
-
-

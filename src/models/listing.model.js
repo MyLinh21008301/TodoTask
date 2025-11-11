@@ -1,3 +1,4 @@
+// src/models/listing.model.js
 import mongoose from 'mongoose';
 const { Schema } = mongoose;
 
@@ -19,6 +20,13 @@ const AddressSchema = new Schema({
   city: String
 }, { _id: false });
 
+// <<< THÊM SCHEMA CON CHO CHI TIẾT PHÒNG >>>
+const RoomDetailsSchema = new Schema({
+  bedrooms: { type: Number, default: 1 },    // Phòng ngủ
+  livingRooms: { type: Number, default: 0 }, // Phòng khách
+  bathrooms: { type: Number, default: 1 }    // Phòng tắm
+}, { _id: false });
+
 const AdminApprovalSchema = new Schema({
   status: { type: String, enum: ['pending_review','approved','rejected'], default: 'pending_review' },
   approvedBy: { type: Schema.Types.ObjectId, ref: 'User' },
@@ -34,7 +42,7 @@ const ListingSchema = new Schema({
 
   location: {
     type: { type: String, enum: ['Point'], default: 'Point' },
-    coordinates: { // [lng, lat]
+    coordinates: {
       type: [Number],
       validate: v => (!v || v.length === 2),
       index: '2dsphere'
@@ -42,6 +50,9 @@ const ListingSchema = new Schema({
   },
   address: AddressSchema,
   citySlug: { type: String, index: true },
+
+  // <<< THÊM TRƯỜNG MỚI VÀO SCHEMA CHÍNH >>>
+  roomDetails: { type: RoomDetailsSchema, default: () => ({}) },
 
   amenities: [String],
   photos: [{ s3Key: String, url: String }],
@@ -57,7 +68,6 @@ const ListingSchema = new Schema({
     t1DayRefundPct: { type: Number, default: 0, min: 0, max: 100 }
   },
 
-  // Trạng thái hiển thị/duyệt
   status: {
     type: String,
     enum: ['draft','pending_review','approved','rejected','archived'],
@@ -66,6 +76,7 @@ const ListingSchema = new Schema({
   },
   adminApproval: { type: AdminApprovalSchema, default: { status: 'pending_review' } }
 }, { timestamps: true });
+
 ListingSchema.index({ status: 1, citySlug: 1, 'basePrice.amount': 1 });
 const Listing = mongoose.model('Listing', ListingSchema);
 

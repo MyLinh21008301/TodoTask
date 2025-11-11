@@ -1,31 +1,38 @@
+// src/validators/listing.schema.js
 import { z } from 'zod';
-
 export const createListingSchema = z.object({
   title: z.string().min(3),
-  description: z.string().optional(),
+  description: z.string().min(20, 'Mô tả phải có ít nhất 20 ký tự'),
   location: z.object({
-    coordinates: z.tuple([z.number(), z.number()]) // [lng, lat]
+    coordinates: z.tuple([z.number(), z.number()]) 
   }).optional(),
   address: z.object({
-    line1: z.string().optional(),
-    ward: z.string().optional(),
-    district: z.string().optional(),
-    city: z.string().optional()
-  }).optional(),
-  amenities: z.array(z.string()).optional(),
+    city: z.string().min(1, "Vui lòng chọn Tỉnh/Thành phố"),
+    district: z.string().min(1, "Vui lòng chọn Quận/Huyện"),
+    ward: z.string().min(1, "Vui lòng chọn Phường/Xã"),
+    line1: z.string().min(5, 'Vui lòng nhập địa chỉ chi tiết (số nhà, đường)'),
+  }),
+  amenities: z.array(z.string()).min(1, 'Vui lòng chọn ít nhất 1 tiện nghi'),
   photos: z.array(z.object({
-    s3Key: z.string().optional(),
-    url: z.string().url().optional()
-  })).optional(),
+    s3Key: z.string(),
+    url: z.string().url().optional() // url có thể không cần gửi từ client
+  })).min(3, 'Vui lòng tải lên ít nhất 3 tấm ảnh'),
   basePrice: z.object({
-    amount: z.number().min(0),
-    currency: z.string().optional()
+    amount: z.number({ invalid_type_error: 'Vui lòng nhập giá' }).min(1000, 'Giá phải ít nhất 1,000 VNĐ'),
+    currency: z.string().optional().default('VND'),
   }),
   fees: z.object({
     cleaning: z.number().min(0).optional(),
     service:  z.number().min(0).optional(),
     taxPct:   z.number().min(0).max(100).optional()
   }).optional(),
+
+  roomDetails: z.object({
+    bedrooms: z.number().int().min(1, 'Phải có ít nhất 1 phòng ngủ').optional(), // <<< Sửa thành min(1)
+    livingRooms: z.number().int().min(0).optional(),
+    bathrooms: z.number().int().min(0).optional()
+  }).optional(),
+
   unitsCount: z.number().int().min(1).optional(),
   cancellationPolicy: z.object({
     t3DaysRefundPct: z.number().min(0).max(100).optional(),
@@ -33,7 +40,6 @@ export const createListingSchema = z.object({
     t1DayRefundPct: z.number().min(0).max(100).optional()
   }).optional()
 });
-
 export const updateListingSchema = createListingSchema.partial();
 export const adminModerateSchema = z.object({
   approve: z.boolean(),

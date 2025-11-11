@@ -26,7 +26,7 @@ const PasswordResetSchema = new Schema({
 
 // Google link
 const GoogleSubSchema = new Schema({
-  id: { type: String, index: true, sparse: true }, // Google "sub"
+  id: { type: String, sparse: true }, // Google "sub"
   email: { type: String, lowercase: true, trim: true },
   picture: String,
   linkedAt: Date
@@ -126,6 +126,13 @@ const HostProfileSchema = new Schema({
   rejectedAt: Date
 }, { _id: false });
 
+const AddressSchema = new Schema({
+  line1: String,    // Số nhà, tên đường
+  ward: String,     // Phường/Xã
+  district: String, // Quận/Huyện
+  city: String      // Tỉnh/Thành phố
+}, { _id: false });
+
 export const ROLES = ['guest', 'host', 'admin'];
 export const USER_STATUS = ['pending', 'active', 'suspended', 'deleted'];
 
@@ -140,8 +147,14 @@ const UserSchema = new Schema({
   first_name: String,
   last_name: String,
   picture: String,
+  gender: {
+    type: String,
+    enum: ['male', 'female', 'other'] 
+  },
   phone: { type: String },
-
+  dob: { type: Date },
+  address: AddressSchema,
+  
   // Đăng nhập local / Google
   passwordHash: { type: String }, 
   auth: {
@@ -186,6 +199,7 @@ UserSchema.methods.setPassword = async function (plain) {
 UserSchema.methods.comparePassword = async function (plain) {
   if (!this.passwordHash) return false;
   return bcrypt.compare(plain, this.passwordHash);
+
 };
 
 // Gắn chữ ký tay làm current + đẩy history

@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const createBookingSchema = z.object({
   listingId: z.string().min(1),
-  checkinDate: z.string().min(1),    // ISO yyyy-mm-dd
+  checkinDate: z.string().min(1),  // ISO yyyy-mm-dd
   checkoutDate: z.string().min(1),
   guestCount: z.number().int().min(1).default(1)
 });
@@ -17,7 +17,8 @@ export const initiatePaySchema = z.object({
 });
 
 export const webhookSchema = z.object({
-  intentId: z.string().min(1),
+  intentId: z.string().optional(),
+  orderCode: z.string().optional(),
   status: z.enum(['succeeded','failed','refunded']),
   providerTxnId: z.string().optional()
 });

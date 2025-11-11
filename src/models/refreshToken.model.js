@@ -14,8 +14,5 @@ const RefreshTokenSchema = new Schema(
   { timestamps: true }
 );
 
-// Tự xoá khi quá hạn (TTL) – tùy bạn có dùng hay không (Atlas TTL index theo expiresAt)
-RefreshTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-
 const RefreshToken = mongoose.model('RefreshToken', RefreshTokenSchema);
 export default RefreshToken;
