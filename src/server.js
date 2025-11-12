@@ -2,6 +2,8 @@
 
 import 'dotenv/config';
 import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import cors from 'cors'; 
@@ -16,14 +18,30 @@ import bookingRoutes from './routers/booking.routes.js';
 import userRoutes from './routers/user.routes.js';
 import uploadRoutes from './routers/upload.routes.js';
 import notificationRoutes from './routers/notification.routes.js';
+import chatRoutes from './routers/chat.routes.js';
+import searchRoutes from './routers/search.routes.js';
+import { setupChatSocket } from './services/chat.socket.js';
 
 const app = express();
+const httpServer = createServer(app);
 const PORT = process.env.PORT || 5001;
 
 app.use(cors({
-  origin: 'http://localhost:5173', 
+  origin: ['http://localhost:5173', 'http://localhost:5001', 'http://127.0.0.1:5001'], 
   credentials: true 
 }));
+
+// Setup Socket.IO
+const io = new Server(httpServer, {
+  cors: {
+    origin: ['http://localhost:5173', 'http://localhost:5001', 'http://127.0.0.1:5001'],
+    credentials: true,
+    methods: ['GET', 'POST']
+  }
+});
+
+// Setup chat socket handlers
+setupChatSocket(io);
 
 app.use(express.json()); 
 app.use(cookieParser());
@@ -46,12 +64,15 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/search', searchRoutes);
 
 // error handler
 app.use(errorHandler);
 
 await connectDB(); 
-app.listen(PORT, () => {
-    console.log(`Server is running on port 5001`);
-    console.log(`>>> Allowing requests from http://localhost:5173`); 
+httpServer.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+    console.log(`>>> Allowing requests from http://localhost:5173`);
+    console.log(`>>> WebSocket server ready for realtime chat`);
 });

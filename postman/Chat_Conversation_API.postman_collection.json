@@ -1,0 +1,221 @@
+{
+	"info": {
+		"name": "Chat Conversation API",
+		"description": "Collection để test Chat Conversation API",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Auth",
+			"item": [
+				{
+					"name": "Login Guest",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const jsonData = pm.response.json();",
+									"    pm.environment.set(\"guest_token\", jsonData.accessToken);",
+									"    pm.environment.set(\"guest_id\", jsonData.user._id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"guest@test.com\",\n    \"password\": \"123456\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/login",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "login"]
+						}
+					}
+				},
+				{
+					"name": "Login Host",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const jsonData = pm.response.json();",
+									"    pm.environment.set(\"host_token\", jsonData.accessToken);",
+									"    pm.environment.set(\"host_id\", jsonData.user._id);",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"email\": \"host@test.com\",\n    \"password\": \"123456\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/login",
+							"host": ["{{base_url}}"],
+							"path": ["api", "auth", "login"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "Conversation",
+			"item": [
+				{
+					"name": "Get Conversations List",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{guest_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/chat/conversations",
+							"host": ["{{base_url}}"],
+							"path": ["api", "chat", "conversations"]
+						},
+						"description": "Lấy danh sách tất cả conversations (bao gồm cả người có thể chat nhưng chưa có tin nhắn)"
+					}
+				},
+				{
+					"name": "Get Conversation Messages",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{guest_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/chat/conversations/{{receiver_id}}/messages?limit=50&skip=0",
+							"host": ["{{base_url}}"],
+							"path": ["api", "chat", "conversations", "{{receiver_id}}", "messages"],
+							"query": [
+								{
+									"key": "limit",
+									"value": "50",
+									"description": "Số tin nhắn tối đa"
+								},
+								{
+									"key": "skip",
+									"value": "0",
+									"description": "Số tin nhắn bỏ qua (pagination)"
+								}
+							]
+						},
+						"description": "Lấy tin nhắn của một conversation. Nếu chưa có tin nhắn sẽ trả về empty array."
+					}
+				},
+				{
+					"name": "Mark Conversation All as Read",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{guest_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/chat/conversations/{{receiver_id}}/messages/read-all",
+							"host": ["{{base_url}}"],
+							"path": ["api", "chat", "conversations", "{{receiver_id}}", "messages", "read-all"]
+						},
+						"description": "Đánh dấu tất cả tin nhắn của conversation đã đọc"
+					}
+				},
+				{
+					"name": "Get Unread Count by Conversation",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{guest_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/chat/conversations/{{receiver_id}}/messages/unread-count",
+							"host": ["{{base_url}}"],
+							"path": ["api", "chat", "conversations", "{{receiver_id}}", "messages", "unread-count"]
+						},
+						"description": "Lấy số tin nhắn chưa đọc của một conversation cụ thể"
+					}
+				}
+			]
+		},
+		{
+			"name": "General",
+			"item": [
+				{
+					"name": "Get Total Unread Count",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{guest_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/chat/messages/unread-count",
+							"host": ["{{base_url}}"],
+							"path": ["api", "chat", "messages", "unread-count"]
+						}
+					}
+				},
+				{
+					"name": "Mark Message as Read",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{guest_token}}"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/chat/messages/{{message_id}}/read",
+							"host": ["{{base_url}}"],
+							"path": ["api", "chat", "messages", "{{message_id}}", "read"]
+						}
+					}
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:5001"
+		}
+	]
+}
+

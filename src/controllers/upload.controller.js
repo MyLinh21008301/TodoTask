@@ -40,3 +40,61 @@ export const getPresignedPost = async (req, res, next) => {
     next(err);
   }
 };
+
+/**
+ * Tạo presigned URL để upload file cho chat (image, file, voice)
+ */
+export const getChatFileUpload = async (req, res, next) => {
+  try {
+    const { fileName, fileType, messageType = 'file' } = req.body;
+    if (!fileName || !fileType) {
+      return res.status(400).json({ message: "fileName và fileType là bắt buộc" });
+    }
+
+    // Validate messageType
+    if (!['image', 'file', 'voice'].includes(messageType)) {
+      return res.status(400).json({ message: "messageType phải là image, file hoặc voice" });
+    }
+
+    // Tạo key dựa trên messageType
+    const folder = messageType === 'image' ? 'chat/images' : 
+                   messageType === 'voice' ? 'chat/voice' : 'chat/files';
+    const key = `${folder}/${Date.now()}-${fileName.replace(/\s+/g, "-")}`;
+
+    const { url, fields } = await createPresignedPost(s3, {
+      Bucket: BUCKET_NAME,
+      Key: key,
+      Fields: {
+        "Content-Type": fileType,
+      },
+      Conditions: [
+        ["content-length-range", 0, 50 * 1024 * 1024], // 50MB max
+        ["starts-with", "$Content-Type", ""]
+      ],
+      Expires: 300,
+    });
+
+    // Thêm CORS headers vào presigned POST
+    // Note: S3 bucket cũng cần được cấu hình CORS để cho phép upload từ browser
+
+    // Tạo file URL
+    const fileUrl = `https://${BUCKET_NAME}.s3.${process.env.S3_REGION}.amazonaws.com/${key}`;
+
+    res.json({ 
+      url, 
+      fields, 
+      s3Key: key,
+      fileUrl,
+      fileRef: {
+        bucket: BUCKET_NAME,
+        region: process.env.S3_REGION,
+        key: key,
+        url: fileUrl,
+        contentType: fileType
+      }
+    });
+  } catch (err) {
+    console.error("Lỗi khi tạo presigned POST cho chat:", err);
+    next(err);
+  }
+};
