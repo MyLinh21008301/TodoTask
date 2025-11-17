@@ -1,0 +1,1109 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <title>EazyStay – Test Chat API</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <style>
+    body { 
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; 
+      max-width: 1200px; 
+      margin: 32px auto; 
+      padding: 0 16px; 
+    }
+    h1 { margin-bottom: 4px; }
+    .card { 
+      border: 1px solid #ddd; 
+      border-radius: 10px; 
+      padding: 16px; 
+      margin: 16px 0; 
+    }
+    .row { 
+      display: flex; 
+      gap: 12px; 
+      margin: 8px 0; 
+      flex-wrap: wrap; 
+      align-items: center;
+    }
+    label { min-width: 120px; display: inline-block; }
+    input, textarea { 
+      padding: 8px; 
+      min-width: 260px; 
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    textarea {
+      width: 100%;
+      min-height: 100px;
+      font-family: monospace;
+    }
+    button { 
+      padding: 8px 14px; 
+      border: 1px solid #ccc; 
+      border-radius: 8px; 
+      cursor: pointer; 
+      background: #007bff;
+      color: white;
+      border: none;
+    }
+    button:hover { background: #0056b3; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    pre { 
+      background:#f7f7f7; 
+      padding:10px; 
+      border-radius:8px; 
+      overflow:auto; 
+      max-height: 300px;
+      font-size: 12px;
+    }
+    .ok { color: #0a7c2f; }
+    .err { color: #b00020; }
+    .info { color: #0066cc; }
+    .status {
+      padding: 8px;
+      border-radius: 4px;
+      margin: 8px 0;
+    }
+    .status.connected { background: #d4edda; color: #155724; }
+    .status.disconnected { background: #f8d7da; color: #721c24; }
+    .messages-container {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 12px;
+      max-height: 400px;
+      overflow-y: auto;
+      background: #f9f9f9;
+      margin: 12px 0;
+    }
+    .message-item {
+      padding: 8px;
+      margin: 4px 0;
+      border-radius: 4px;
+      background: white;
+      border-left: 3px solid #007bff;
+    }
+    .message-item.own {
+      background: #e7f3ff;
+      border-left-color: #28a745;
+    }
+    .message-item .sender {
+      font-weight: bold;
+      color: #007bff;
+      margin-bottom: 4px;
+    }
+    .message-item .time {
+      font-size: 11px;
+      color: #666;
+      margin-top: 4px;
+    }
+    .two-columns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 768px) {
+      .two-columns {
+        grid-template-columns: 1fr;
+      }
+    }
+    .conversations-list {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 8px;
+      max-height: 300px;
+      overflow-y: auto;
+      background: #f9f9f9;
+      margin: 12px 0;
+    }
+    .conversation-item {
+      padding: 12px;
+      margin: 4px 0;
+      border-radius: 6px;
+      background: white;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .conversation-item:hover {
+      background: #e7f3ff;
+      border-color: #007bff;
+    }
+    .conversation-item.selected {
+      background: #cfe2ff;
+      border-color: #007bff;
+    }
+    .conversation-item .name {
+      font-weight: bold;
+      color: #007bff;
+      margin-bottom: 4px;
+    }
+    .conversation-item .last-message {
+      font-size: 12px;
+      color: #666;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .chat-btn {
+      padding: 4px 8px;
+      font-size: 12px;
+      background: #28a745;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .chat-btn:hover {
+      background: #218838;
+    }
+    .conversation-item .meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: #999;
+      margin-top: 4px;
+    }
+    .conversation-item .badge {
+      background: #dc3545;
+      color: white;
+      border-radius: 10px;
+      padding: 2px 6px;
+      font-size: 10px;
+      font-weight: bold;
+    }
+    .conversation-item .new-badge {
+      background: #28a745;
+      color: white;
+      border-radius: 10px;
+      padding: 2px 6px;
+      font-size: 10px;
+      font-weight: bold;
+    }
+    .chat-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px;
+      background: #f0f0f0;
+      border-radius: 6px;
+      margin-bottom: 8px;
+    }
+    .chat-header .receiver-info {
+      font-weight: bold;
+      color: #007bff;
+    }
+  </style>
+</head>
+<body>
+  <h1>EazyStay – Test Chat API</h1>
+  
+  <div class="card">
+    <h2>1. Authentication</h2>
+    <div class="row">
+      <label>Access Token:</label>
+      <input id="token-input" type="text" placeholder="Paste your JWT token here" style="flex: 1;">
+      <button id="btn-set-token">Set Token</button>
+    </div>
+    <div class="row">
+      <label>Or Login:</label>
+      <input id="login-email" type="email" placeholder="email@example.com" value="user1@test.com">
+      <input id="login-pass" type="password" placeholder="Password" value="Secret@123">
+      <button id="btn-login">Login</button>
+    </div>
+    <div id="auth-status" class="status disconnected">Not authenticated</div>
+  </div>
+
+  <div class="card">
+    <h2>2. WebSocket Connection</h2>
+    <div class="row">
+      <button id="btn-connect">Connect WebSocket</button>
+      <button id="btn-disconnect" disabled>Disconnect</button>
+    </div>
+    <div id="ws-status" class="status disconnected">Disconnected</div>
+  </div>
+
+  <div class="two-columns">
+    <div class="card">
+      <h2>3. Conversations List (Đã nhắn tin)</h2>
+      <div class="row">
+        <button id="btn-load-conversations">Load Conversations</button>
+        <button id="btn-refresh-conversations">Refresh</button>
+      </div>
+      <div id="conversations-list" class="conversations-list">
+        <div style="text-align: center; color: #666; padding: 20px;">
+          Click "Load Conversations" to see people you've chatted with
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>3b. Available Users (Chọn để chat mới)</h2>
+      <div class="row">
+        <input id="search-users" type="text" placeholder="Search users..." style="flex: 1;">
+        <button id="btn-load-users">Load Users</button>
+      </div>
+      <div id="users-list" class="conversations-list">
+        <div style="text-align: center; color: #666; padding: 20px;">
+          Click "Load Users" to see available people to start a new chat
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="two-columns">
+    <div class="card">
+      <h2>4. REST API Test</h2>
+      <div class="row">
+        <label>Receiver ID:</label>
+        <input id="receiver-id" type="text" placeholder="User ID to chat with">
+      </div>
+      <div class="row">
+        <label>Booking ID (optional):</label>
+        <input id="booking-id" type="text" placeholder="Booking ID (optional)">
+      </div>
+      <div class="row">
+        <button id="btn-get-messages">Get Messages</button>
+        <button id="btn-mark-all-read">Mark All Read</button>
+        <button id="btn-unread-count">Unread Count</button>
+      </div>
+      <h3>API Response:</h3>
+      <pre id="api-response">No response yet...</pre>
+    </div>
+
+    <div class="card">
+      <h2>5. WebSocket Chat</h2>
+      <div id="chat-header" class="chat-header" style="display: none;">
+        <span class="receiver-info">Chat with: <span id="current-receiver-name">-</span></span>
+        <button id="btn-leave-conversation" style="padding: 4px 8px; font-size: 12px;">Leave</button>
+      </div>
+      <div class="row">
+        <label>Receiver ID:</label>
+        <input id="ws-receiver-id" type="text" placeholder="User ID to chat with">
+        <button id="btn-join-conversation">Join Conversation</button>
+      </div>
+      <div class="row" style="display: none;" id="booking-row">
+        <label>Booking ID (optional):</label>
+        <input id="ws-booking-id" type="text" placeholder="Booking ID (optional)">
+        <button id="btn-join-booking">Join Booking</button>
+      </div>
+      <div class="row">
+        <label>Message:</label>
+        <input id="message-input" type="text" placeholder="Type your message..." style="flex: 1;">
+        <button id="btn-send-message">Send</button>
+      </div>
+      <div class="row">
+        <button id="btn-upload-image" title="Upload Image">📷 Image</button>
+        <button id="btn-upload-file" title="Upload File">📎 File</button>
+        <button id="btn-record-voice" title="Record Voice">🎤 Voice</button>
+        <input type="file" id="file-input" accept="image/*,audio/*,.pdf,.doc,.docx,.txt" style="display: none;">
+        <input type="file" id="image-input" accept="image/*" style="display: none;">
+      </div>
+      <div class="row" id="voice-recording-row" style="display: none;">
+        <audio id="voice-preview" controls style="flex: 1;"></audio>
+        <button id="btn-send-voice">Send Voice</button>
+        <button id="btn-cancel-voice">Cancel</button>
+      </div>
+      <div class="row">
+        <button id="btn-typing">Typing...</button>
+        <button id="btn-stop-typing">Stop Typing</button>
+        <button id="btn-mark-all-read-ws">Mark All Read</button>
+      </div>
+      <h3>Messages:</h3>
+      <div id="messages-container" class="messages-container">
+        <div style="text-align: center; color: #666;">Select a conversation to start chatting...</div>
+      </div>
+      <h3>WebSocket Events:</h3>
+      <pre id="ws-events">Waiting for events...</pre>
+    </div>
+  </div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let ACCESS_TOKEN = '';
+  let socket = null;
+  let currentReceiverId = null;
+  let currentBookingId = null;
+  let conversations = [];
+  let currentUserId = null;
+
+  // ====== AUTHENTICATION ======
+  function setToken(token) {
+    ACCESS_TOKEN = token;
+    $('token-input').value = token;
+    updateAuthStatus(true);
+  }
+
+  function updateAuthStatus(authenticated) {
+    const status = $('auth-status');
+    if (authenticated && ACCESS_TOKEN) {
+      status.className = 'status connected';
+      status.textContent = '✅ Authenticated';
+    } else {
+      status.className = 'status disconnected';
+      status.textContent = '❌ Not authenticated';
+    }
+  }
+
+  $('btn-set-token').onclick = () => {
+    const token = $('token-input').value.trim();
+    if (token) {
+      setToken(token);
+    }
+  };
+
+  $('btn-login').onclick = async () => {
+    const email = $('login-email').value;
+    const password = $('login-pass').value;
+    
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      
+      if (res.ok && data.accessToken) {
+        setToken(data.accessToken);
+        currentUserId = data.user._id;
+        logApi('Login successful', data);
+        // Auto load conversations after login
+        setTimeout(() => loadConversations(), 500);
+      } else {
+        logApi('Login failed', data);
+        updateAuthStatus(false);
+      }
+    } catch (e) {
+      logApi('Login error', { error: e.message });
+      updateAuthStatus(false);
+    }
+  };
+
+  // ====== REST API ======
+  function logApi(title, data) {
+    $('api-response').textContent = `${title}:\n${JSON.stringify(data, null, 2)}`;
+  }
+
+  async function apiCall(endpoint, options = {}) {
+    if (!ACCESS_TOKEN) {
+      logApi('Error', { message: 'No access token. Please login first.' });
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/chat${endpoint}`, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${ACCESS_TOKEN}`,
+          ...options.headers
+        }
+      });
+      const data = await res.json();
+      logApi(`${options.method || 'GET'} ${endpoint}`, data);
+      return { res, data };
+    } catch (e) {
+      logApi('API Error', { error: e.message });
+      return null;
+    }
+  }
+
+  // ====== CONVERSATIONS ======
+  async function loadConversations() {
+    const result = await apiCall('/conversations');
+    if (result && result.data && result.data.items) {
+      conversations = result.data.items;
+      renderConversations();
+      logApi('Conversations loaded', { total: result.data.total });
+    }
+  }
+
+  function renderConversations() {
+    const container = $('conversations-list');
+    if (conversations.length === 0) {
+      container.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">No conversations available</div>';
+      return;
+    }
+
+    container.innerHTML = conversations.map((conv, idx) => {
+      const name = `${conv.first_name || ''} ${conv.last_name || ''}`.trim() || conv.email;
+      const lastMsg = conv.lastMessage ? (conv.lastMessage.length > 50 ? conv.lastMessage.substring(0, 50) + '...' : conv.lastMessage) : 'No messages yet';
+      const time = conv.lastMessageAt ? new Date(conv.lastMessageAt).toLocaleString() : '';
+      const isSelected = currentReceiverId === conv.userId.toString();
+      
+      return `
+        <div class="conversation-item ${isSelected ? 'selected' : ''}" 
+             data-user-id="${conv.userId}" 
+             onclick="selectConversation('${conv.userId}', '${name.replace(/'/g, "\\'")}')">
+          <div class="name">
+            ${name}
+            ${conv.unreadCount > 0 ? `<span class="badge">${conv.unreadCount}</span>` : ''}
+            ${!conv.hasConversation ? `<span class="new-badge">NEW</span>` : ''}
+          </div>
+          ${conv.lastMessage ? `<div class="last-message">${lastMsg}</div>` : '<div class="last-message" style="font-style: italic;">Start conversation...</div>'}
+          <div class="meta">
+            <span>${time || ''}</span>
+            <span>${conv.hasConversation ? 'Chatted' : 'Available'}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function selectConversation(userId, userName) {
+    currentReceiverId = userId;
+    $('receiver-id').value = userId;
+    $('ws-receiver-id').value = userId;
+    $('current-receiver-name').textContent = userName;
+    $('chat-header').style.display = 'flex';
+    
+    // Update UI
+    renderConversations();
+    
+    // Load messages
+    loadMessages(userId);
+    
+    // Join conversation if WebSocket connected
+    if (socket && socket.connected) {
+      socket.emit('join-conversation', userId);
+      logWs('join-conversation', { receiverId: userId });
+    }
+  }
+
+  async function loadMessages(receiverId) {
+    if (!receiverId) return;
+    
+    const result = await apiCall(`/conversations/${receiverId}/messages?limit=50&skip=0`);
+    if (result && result.data && result.data.items) {
+      const container = $('messages-container');
+      container.innerHTML = '';
+      
+      if (result.data.items.length === 0) {
+        container.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">No messages yet. Start the conversation!</div>';
+      } else {
+        result.data.items.forEach(msg => {
+          const isOwn = msg.senderId._id.toString() === currentUserId;
+          addMessage(msg, isOwn, false); // false = don't scroll, we'll scroll at end
+        });
+        container.scrollTop = container.scrollHeight;
+      }
+      
+      logApi('Messages loaded', { total: result.data.total });
+    }
+  }
+
+  $('btn-load-conversations').onclick = loadConversations;
+  $('btn-refresh-conversations').onclick = loadConversations;
+
+  // ====== AVAILABLE USERS ======
+  let availableUsers = [];
+  
+  async function loadAvailableUsers() {
+    const search = $('search-users').value.trim();
+    const searchParam = search ? `&search=${encodeURIComponent(search)}` : '';
+    const result = await apiCall(`/users/available?limit=50&skip=0${searchParam}`);
+    if (result && result.data && result.data.items) {
+      availableUsers = result.data.items;
+      renderAvailableUsers();
+      logApi('Available users loaded', { total: result.data.total });
+    }
+  }
+
+  function renderAvailableUsers() {
+    const container = $('users-list');
+    if (availableUsers.length === 0) {
+      container.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">No users available</div>';
+      return;
+    }
+
+    container.innerHTML = availableUsers.map((user) => {
+      const name = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email;
+      return `
+        <div class="conversation-item" 
+             data-user-id="${user._id}" 
+             onclick="selectUserToChat('${user._id}', '${name.replace(/'/g, "\\'")}')">
+          <div class="name">${name}</div>
+          <div class="meta">
+            <span>${user.email}</span>
+            <button class="chat-btn" onclick="event.stopPropagation(); selectUserToChat('${user._id}', '${name.replace(/'/g, "\\'")}')">💬 Chat</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function selectUserToChat(userId, userName) {
+    currentReceiverId = userId;
+    $('receiver-id').value = userId;
+    $('ws-receiver-id').value = userId;
+    $('current-receiver-name').textContent = userName;
+    $('chat-header').style.display = 'flex';
+    
+    // Load messages (có thể rỗng nếu chưa chat)
+    loadMessages(userId);
+    
+    // Join conversation if WebSocket connected
+    if (socket && socket.connected) {
+      socket.emit('join-conversation', userId);
+      logWs('join-conversation', { receiverId: userId });
+    }
+  }
+
+  $('btn-load-users').onclick = loadAvailableUsers;
+  $('search-users').onkeypress = (e) => {
+    if (e.key === 'Enter') loadAvailableUsers();
+  };
+
+  // ====== REST API ======
+  $('btn-get-messages').onclick = async () => {
+    const receiverId = $('receiver-id').value.trim();
+    const bookingId = $('booking-id').value.trim();
+    
+    if (receiverId) {
+      await apiCall(`/conversations/${receiverId}/messages?limit=50&skip=0`);
+      loadMessages(receiverId);
+    } else if (bookingId) {
+      await apiCall(`/bookings/${bookingId}/messages?limit=50&skip=0`);
+    } else {
+      logApi('Error', { message: 'Please enter Receiver ID or Booking ID' });
+    }
+  };
+
+  $('btn-mark-all-read').onclick = async () => {
+    const receiverId = $('receiver-id').value.trim();
+    const bookingId = $('booking-id').value.trim();
+    
+    if (receiverId) {
+      await apiCall(`/conversations/${receiverId}/messages/read-all`, { method: 'PATCH' });
+      loadConversations(); // Refresh to update unread count
+    } else if (bookingId) {
+      await apiCall(`/bookings/${bookingId}/messages/read-all`, { method: 'PATCH' });
+    } else {
+      logApi('Error', { message: 'Please enter Receiver ID or Booking ID' });
+    }
+  };
+
+  $('btn-unread-count').onclick = async () => {
+    const receiverId = $('receiver-id').value.trim();
+    const bookingId = $('booking-id').value.trim();
+    
+    if (receiverId) {
+      await apiCall(`/conversations/${receiverId}/messages/unread-count`);
+    } else if (bookingId) {
+      await apiCall(`/bookings/${bookingId}/messages/unread-count`);
+    } else {
+      await apiCall('/messages/unread-count');
+    }
+  };
+
+  // ====== WEBSOCKET ======
+  function logWs(event, data) {
+    const events = $('ws-events');
+    const timestamp = new Date().toLocaleTimeString();
+    const log = `[${timestamp}] ${event}:\n${JSON.stringify(data, null, 2)}\n\n`;
+    events.textContent = log + events.textContent;
+  }
+
+  function updateWsStatus(connected) {
+    const status = $('ws-status');
+    const btnConnect = $('btn-connect');
+    const btnDisconnect = $('btn-disconnect');
+    
+    if (connected) {
+      status.className = 'status connected';
+      status.textContent = '✅ Connected';
+      btnConnect.disabled = true;
+      btnDisconnect.disabled = false;
+    } else {
+      status.className = 'status disconnected';
+      status.textContent = '❌ Disconnected';
+      btnConnect.disabled = false;
+      btnDisconnect.disabled = true;
+    }
+  }
+
+  function addMessage(message, isOwn = false, scroll = true) {
+    const container = $('messages-container');
+    if (container.children.length === 1 && 
+        (container.children[0].textContent.includes('No messages') || 
+         container.children[0].textContent.includes('Select a conversation'))) {
+      container.innerHTML = '';
+    }
+
+    const div = document.createElement('div');
+    div.className = `message-item ${isOwn ? 'own' : ''}`;
+    div.setAttribute('data-message-id', message._id);
+    
+    const sender = message.senderId?.first_name || message.senderId?._id || 'Unknown';
+    const time = new Date(message.createdAt).toLocaleString();
+    const messageType = message.messageType || 'text';
+    
+    let contentHtml = '';
+    if (messageType === 'image' && message.file) {
+      contentHtml = `
+        <div><img src="${message.file.url}" style="max-width: 300px; max-height: 300px; border-radius: 8px; cursor: pointer;" onclick="window.open('${message.file.url}', '_blank')" /></div>
+        ${message.message ? `<div style="margin-top: 8px;">${message.message}</div>` : ''}
+      `;
+    } else if (messageType === 'file' && message.file) {
+      const fileName = message.file.key?.split('/').pop() || 'File';
+      const fileSize = message.file.size ? `(${(message.file.size / 1024).toFixed(1)} KB)` : '';
+      contentHtml = `
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span>📎</span>
+          <a href="${message.file.url}" target="_blank" style="color: #007bff; text-decoration: none;">${fileName}</a>
+          <span style="color: #666; font-size: 12px;">${fileSize}</span>
+        </div>
+        ${message.message ? `<div style="margin-top: 8px;">${message.message}</div>` : ''}
+      `;
+    } else if (messageType === 'voice' && message.file) {
+      contentHtml = `
+        <div>
+          <audio controls style="width: 100%; max-width: 300px;">
+            <source src="${message.file.url}" type="audio/mpeg">
+            Your browser does not support the audio element.
+          </audio>
+        </div>
+        ${message.message ? `<div style="margin-top: 8px;">${message.message}</div>` : ''}
+      `;
+    } else {
+      contentHtml = `<div>${message.message || ''}</div>`;
+    }
+    
+    div.innerHTML = `
+      <div class="sender">${isOwn ? 'You' : sender}</div>
+      ${contentHtml}
+      <div class="time">${time} ${message.read ? '✓ Read' : ''}</div>
+    `;
+    
+    container.appendChild(div);
+    if (scroll) {
+      container.scrollTop = container.scrollHeight;
+    }
+  }
+
+  $('btn-connect').onclick = () => {
+    if (!ACCESS_TOKEN) {
+      alert('Please login or set token first!');
+      return;
+    }
+
+    if (socket) {
+      socket.disconnect();
+    }
+
+    socket = io('http://localhost:5001', {
+      auth: {
+        token: ACCESS_TOKEN
+      }
+    });
+
+    socket.on('connect', () => {
+      logWs('connect', { socketId: socket.id });
+      updateWsStatus(true);
+    });
+
+    socket.on('disconnect', (reason) => {
+      logWs('disconnect', { reason });
+      updateWsStatus(false);
+    });
+
+    socket.on('error', (error) => {
+      logWs('error', error);
+    });
+
+    socket.on('joined-conversation', (data) => {
+      logWs('joined-conversation', data);
+      currentReceiverId = data.otherUserId;
+      $('current-receiver-name').textContent = `${data.otherUser.first_name || ''} ${data.otherUser.last_name || ''}`.trim() || data.otherUser.email;
+      $('chat-header').style.display = 'flex';
+    });
+
+    socket.on('joined-booking', (data) => {
+      logWs('joined-booking', data);
+      currentBookingId = data.bookingId;
+    });
+
+    socket.on('new-message', (data) => {
+      logWs('new-message', data);
+      const msg = data.message;
+      
+      // Check if message is for current conversation
+      const msgReceiverId = msg.receiverId._id?.toString() || msg.receiverId.toString();
+      const msgSenderId = msg.senderId._id?.toString() || msg.senderId.toString();
+      
+      // Check if this message belongs to current conversation
+      const isForCurrentConversation = currentReceiverId && 
+        (msgReceiverId === currentReceiverId || msgSenderId === currentReceiverId);
+      
+      if (isForCurrentConversation) {
+        const isOwn = msgSenderId === currentUserId;
+        addMessage(msg, isOwn);
+        // Refresh conversations to update last message
+        setTimeout(() => loadConversations(), 500);
+      } else if (msgReceiverId === currentUserId) {
+        // Message for us but different conversation - refresh list to show unread
+        setTimeout(() => loadConversations(), 500);
+      }
+    });
+
+    socket.on('message-notification', (data) => {
+      logWs('message-notification', data);
+    });
+
+    socket.on('message-read', (data) => {
+      logWs('message-read', data);
+    });
+
+    socket.on('all-messages-read', (data) => {
+      logWs('all-messages-read', data);
+      // Refresh conversations to update unread count
+      setTimeout(() => loadConversations(), 500);
+    });
+
+    socket.on('user-typing', (data) => {
+      logWs('user-typing', data);
+    });
+
+    socket.on('user-stop-typing', (data) => {
+      logWs('user-stop-typing', data);
+    });
+  };
+
+  $('btn-disconnect').onclick = () => {
+    if (socket) {
+      socket.disconnect();
+      socket = null;
+      updateWsStatus(false);
+    }
+  };
+
+  $('btn-join-conversation').onclick = () => {
+    if (!socket || !socket.connected) {
+      alert('Please connect WebSocket first!');
+      return;
+    }
+
+    const receiverId = $('ws-receiver-id').value.trim();
+    if (!receiverId) {
+      alert('Please enter Receiver ID');
+      return;
+    }
+
+    socket.emit('join-conversation', receiverId);
+    currentReceiverId = receiverId;
+    $('receiver-id').value = receiverId; // Sync với REST API input
+    loadMessages(receiverId);
+  };
+
+  $('btn-join-booking').onclick = () => {
+    if (!socket || !socket.connected) {
+      alert('Please connect WebSocket first!');
+      return;
+    }
+
+    const bookingId = $('ws-booking-id').value.trim();
+    if (!bookingId) {
+      alert('Please enter Booking ID');
+      return;
+    }
+
+    socket.emit('join-booking', bookingId);
+    currentBookingId = bookingId;
+    $('booking-id').value = bookingId; // Sync với REST API input
+  };
+
+  $('btn-leave-conversation').onclick = () => {
+    if (socket && socket.connected && currentReceiverId) {
+      socket.emit('leave-conversation', currentReceiverId);
+      currentReceiverId = null;
+      $('chat-header').style.display = 'none';
+      $('messages-container').innerHTML = '<div style="text-align: center; color: #666;">Select a conversation to start chatting...</div>';
+      renderConversations();
+    }
+  };
+
+  $('btn-send-message').onclick = () => {
+    if (!socket || !socket.connected) {
+      alert('Please connect WebSocket first!');
+      return;
+    }
+
+    const message = $('message-input').value.trim();
+    if (!message) {
+      alert('Please enter a message');
+      return;
+    }
+
+    const receiverId = $('ws-receiver-id').value.trim();
+    const bookingId = $('ws-booking-id').value.trim();
+
+    if (!receiverId && !bookingId) {
+      alert('Please enter Receiver ID or Booking ID');
+      return;
+    }
+
+    const payload = { 
+      message,
+      messageType: 'text'
+    };
+    if (receiverId) {
+      payload.receiverId = receiverId;
+    } else if (bookingId) {
+      payload.bookingId = bookingId;
+    }
+
+    socket.emit('send-message', payload);
+    $('message-input').value = '';
+    
+    // Refresh conversations to update last message
+    setTimeout(() => loadConversations(), 500);
+  };
+
+  // ====== FILE UPLOAD ======
+  let mediaRecorder = null;
+  let recordedChunks = [];
+  let currentRecordingBlob = null;
+
+  async function uploadFile(file, messageType) {
+    if (!currentReceiverId) {
+      alert('Please select a user to chat with first!');
+      return;
+    }
+
+    try {
+      // 1. Get presigned URL
+      const uploadRes = await fetch('/api/upload/chat-file', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${ACCESS_TOKEN}`
+        },
+        body: JSON.stringify({
+          fileName: file.name,
+          fileType: file.type,
+          messageType: messageType
+        })
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error('Failed to get upload URL');
+      }
+
+      const { url, fields, fileRef } = await uploadRes.json();
+
+      // 2. Upload to S3
+      const formData = new FormData();
+      Object.keys(fields).forEach(key => {
+        formData.append(key, fields[key]);
+      });
+      formData.append('file', file);
+
+      const s3Res = await fetch(url, {
+        method: 'POST',
+        body: formData,
+        // Không thêm headers khi upload lên S3, S3 sẽ tự xử lý
+      });
+
+      if (!s3Res.ok) {
+        const errorText = await s3Res.text();
+        console.error('S3 Upload Error:', errorText);
+        throw new Error(`Failed to upload to S3: ${s3Res.status} ${s3Res.statusText}`);
+      }
+
+      // 3. Send message via WebSocket
+      if (socket && socket.connected) {
+        const caption = $('message-input').value.trim();
+        socket.emit('send-message', {
+          receiverId: currentReceiverId,
+          messageType: messageType,
+          message: caption || '',
+          file: fileRef
+        });
+        $('message-input').value = '';
+        logWs('send-message', { receiverId: currentReceiverId, messageType, file: fileRef });
+      } else {
+        alert('WebSocket not connected!');
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      let errorMsg = 'Failed to upload file: ' + error.message;
+      if (error.message.includes('CORS') || error.message.includes('NetworkError')) {
+        errorMsg += '\n\n⚠️ CORS Error: S3 bucket cần được cấu hình CORS.\nVui lòng kiểm tra cấu hình CORS của S3 bucket.';
+      }
+      alert(errorMsg);
+    }
+  }
+
+  $('btn-upload-image').onclick = () => {
+    $('image-input').click();
+  };
+
+  $('image-input').onchange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      uploadFile(file, 'image');
+    }
+    e.target.value = ''; // Reset input
+  };
+
+  $('btn-upload-file').onclick = () => {
+    $('file-input').click();
+  };
+
+  $('file-input').onchange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      uploadFile(file, 'file');
+    }
+    e.target.value = ''; // Reset input
+  };
+
+  // ====== VOICE RECORDING ======
+  let isRecording = false;
+
+  $('btn-record-voice').onclick = async () => {
+    if (!currentReceiverId) {
+      alert('Please select a user to chat with first!');
+      return;
+    }
+
+    if (isRecording) {
+      // Stop recording
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+      }
+      isRecording = false;
+      $('btn-record-voice').textContent = '🎤 Voice';
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      recordedChunks = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          recordedChunks.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        currentRecordingBlob = new Blob(recordedChunks, { type: 'audio/webm' });
+        const audioUrl = URL.createObjectURL(currentRecordingBlob);
+        $('voice-preview').src = audioUrl;
+        $('voice-recording-row').style.display = 'flex';
+        
+        // Stop all tracks
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      isRecording = true;
+      $('btn-record-voice').textContent = '⏹️ Stop Recording';
+    } catch (error) {
+      console.error('Error accessing microphone:', error);
+      alert('Failed to access microphone: ' + error.message);
+    }
+  };
+
+  $('btn-send-voice').onclick = async () => {
+    if (!currentRecordingBlob) {
+      alert('No recording to send!');
+      return;
+    }
+
+    // Convert blob to File
+    const file = new File([currentRecordingBlob], `voice-${Date.now()}.webm`, { type: 'audio/webm' });
+    await uploadFile(file, 'voice');
+    
+    // Reset
+    currentRecordingBlob = null;
+    $('voice-recording-row').style.display = 'none';
+    $('voice-preview').src = '';
+  };
+
+  $('btn-cancel-voice').onclick = () => {
+    currentRecordingBlob = null;
+    $('voice-recording-row').style.display = 'none';
+    $('voice-preview').src = '';
+  };
+
+  $('message-input').onkeypress = (e) => {
+    if (e.key === 'Enter') {
+      $('btn-send-message').click();
+    }
+  };
+
+  $('btn-typing').onclick = () => {
+    if (!socket || !socket.connected) return;
+    
+    const receiverId = $('ws-receiver-id').value.trim();
+    const bookingId = $('ws-booking-id').value.trim();
+    
+    if (receiverId) {
+      socket.emit('typing', { receiverId });
+    } else if (bookingId) {
+      socket.emit('typing', { bookingId });
+    }
+  };
+
+  $('btn-stop-typing').onclick = () => {
+    if (!socket || !socket.connected) return;
+    
+    const receiverId = $('ws-receiver-id').value.trim();
+    const bookingId = $('ws-booking-id').value.trim();
+    
+    if (receiverId) {
+      socket.emit('stop-typing', { receiverId });
+    } else if (bookingId) {
+      socket.emit('stop-typing', { bookingId });
+    }
+  };
+
+  $('btn-mark-all-read-ws').onclick = () => {
+    if (!socket || !socket.connected) {
+      alert('Please connect WebSocket first!');
+      return;
+    }
+
+    const receiverId = $('ws-receiver-id').value.trim();
+    const bookingId = $('ws-booking-id').value.trim();
+
+    if (receiverId) {
+      socket.emit('mark-all-read', { receiverId });
+    } else if (bookingId) {
+      socket.emit('mark-all-read', { bookingId });
+    } else {
+      alert('Please enter Receiver ID or Booking ID');
+    }
+  };
+
+  // Auto-load token from localStorage
+  window.onload = () => {
+    const savedToken = localStorage.getItem('chat_test_token');
+    if (savedToken) {
+      setToken(savedToken);
+    }
+    
+    // Save token when changed
+    $('token-input').onchange = () => {
+      if ($('token-input').value) {
+        localStorage.setItem('chat_test_token', $('token-input').value);
+      }
+    };
+
+    // Auto load conversations if authenticated
+    if (ACCESS_TOKEN) {
+      setTimeout(() => loadConversations(), 500);
+    }
+  };
+
+  // Make selectConversation available globally
+  window.selectConversation = selectConversation;
+</script>
+</body>
+</html>
+
