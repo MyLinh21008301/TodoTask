@@ -27,5 +27,3 @@ export const getUserPublicProfileById = async (req, res, next) => {
     next(err); // Chuyển lỗi cho error handler chung
   }
 };
-
-// Có thể thêm các controller khác liên quan đến user ở đây (vd: get current user profile...)

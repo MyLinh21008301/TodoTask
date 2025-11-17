@@ -1,8 +1,10 @@
+// src/routes/booking.routes.js
 import express from 'express';
 import {
   createBooking, hostAccept, hostDecline,
-  initiatePayment, paymentWebhook,
-  listMineGuest, listMineHost
+  initiatePayment, // paymentWebhook đã bị xóa khỏi đây
+  listMineGuest, listMineHost,
+  getBookingById, getBookingByOrderCode
 } from '../controllers/booking.controller.js';
 import { authGuard } from '../middlewares/authGuard.js';
 import { requireRole } from '../middlewares/roles.js';
@@ -30,26 +32,13 @@ r.post('/:id/pay/initiate', authGuard, requireRole('guest'), express.json(), ini
 r.get('/host/mine', authGuard, requireRole('host'), expireStaleAwaiting, listMineHost);
 r.post('/:id/host-accept', authGuard, requireRole('host'), express.json(), hostAccept);
 r.post('/:id/host-decline', authGuard, requireRole('host'), express.json(), hostDecline);
+r.get('/by-order/:orderCode', authGuard, getBookingByOrderCode);
 
-// Webhook (public) – Dùng raw body để verify chữ ký của cổng thanh toán
-r.post(
-  '/webhook',
-  // Middleware này phải đứng TRƯỚC express.json()
-  // Nó sẽ đọc luồng request và lưu body gốc vào req.rawBody
-  express.raw({ type: '*/*' }),
-  // Middleware tiếp theo sẽ parse body thô đó thành JSON để controller sử dụng
-  (req, _res, next) => {
-    try {
-      req.rawBody = req.body; // lưu lại buffer gốc
-      const bodyString = req.body.toString('utf8');
-      req.body = bodyString ? JSON.parse(bodyString) : {}; // parse lại thành object
-      next();
-    } catch (e) {
-        console.error("Error parsing webhook body:", e);
-        next(e);
-    }
-  },
-  paymentWebhook
-);
+// Lấy bằng ID (cho trang thanh toán & hợp đồng)
+r.get('/:id', authGuard, getBookingById);
+
+
+// === ROUTE WEBHOOK ĐÃ BỊ XÓA KHỎI ĐÂY ===
+
 
 export default r;

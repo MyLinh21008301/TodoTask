@@ -112,9 +112,6 @@ const BookingSchema = new Schema({
 BookingSchema.index({ guestId:1, status:1, createdAt:-1 });
 BookingSchema.index({ hostId:1, status:1, createdAt:-1 });
 
-// <<< SỬA ĐỔI DUY NHẤT NẰM Ở ĐÂY >>>
-// Index này sẽ ngăn chặn việc tạo 2 booking có cùng listingId và khoảng thời gian trùng nhau
-// nếu chúng ở trạng thái đã được xác nhận.
 BookingSchema.index(
   {
     listingId: 1,

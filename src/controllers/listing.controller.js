@@ -1,7 +1,8 @@
+// src/listing.controller.js
 import Listing from '../models/listing.model.js';
 import { createListingSchema, updateListingSchema, adminModerateSchema, publicSearchSchema, mineQuerySchema,
     reorderPhotosSchema, removePhotoSchema } from '../validators/listing.schema.js';
-import { toSlug } from '../utils/text.js';
+import { toSlug } from '../utils/text.js'; // <-- Sẽ import hàm toSlug đã sửa
 import mongoose from 'mongoose';
 
 
@@ -9,10 +10,12 @@ import mongoose from 'mongoose';
 export async function createListing(req, res, next) {
     try {
       const body = createListingSchema.parse(req.body);
-      const city = body.address?.city;             
+      const city = body.address?.city; // Ví dụ: "Thành phố Hà Nội"
+            
       const doc = await Listing.create({
         ...body,
         hostId: req.user._id,
+        // toSlug("Thành phố Hà Nội") sẽ trả về "ha-noi"
         citySlug: city ? toSlug(city) : undefined, 
         status: 'pending_review',
         adminApproval: { status: 'pending_review' }
@@ -33,6 +36,7 @@ export async function updateListing(req, res, next) {
       Object.assign(doc, body);
   
       if (body.address?.city) {
+        // toSlug("Thành phố Hà Nội") sẽ trả về "ha-noi"
         doc.citySlug = toSlug(body.address.city);  
       }
   
@@ -108,7 +112,11 @@ export async function adminModerateListing(req, res, next) {
       const q = publicSearchSchema.parse(req.query);
       const cond = { status: 'approved' };
   
-      if (q.city) cond.citySlug = toSlug(q.city);  // <-- DÙNG citySlug
+      if (q.city) {
+        // q.city từ frontend gửi lên là "ha-noi" (đã có gạch nối)
+        // Hàm toSlug mới sẽ không thay đổi gì "ha-noi"
+        cond.citySlug = toSlug(q.city);
+      }
       if (q.q) cond.title = { $regex: q.q, $options: 'i' };
   
       if (q.minPrice || q.maxPrice) {
