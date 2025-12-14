@@ -8,7 +8,7 @@ async function run() {
   const dbName = process.env.MONGODB_DB;
   if (!uri) throw new Error('Missing MONGODB_URI');
   await mongoose.connect(uri, { dbName });
-  console.log('✅ Connected');
+  console.log('Connected');
 
   const cursor = Listing.find({
     $or: [{ citySlug: { $exists: false } }, { citySlug: null }, { citySlug: '' }]
@@ -43,7 +43,7 @@ async function run() {
   }
 
   await mongoose.disconnect();
-  console.log('✅ Done & disconnected');
+  console.log('Done & disconnected');
 }
 
 run().catch(err => {

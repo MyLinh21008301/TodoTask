@@ -4,9 +4,10 @@ import { authGuard } from '../middlewares/authGuard.js';
 import { requireRole } from '../middlewares/roles.js';
 import {
   getHostStatus,
-  adminApproveHost,
-  submitHostOnboarding // <-- Import hàm MỚI
+  submitHostOnboarding, 
+  getMyPayoutStats
 } from '../controllers/host.controller.js';
+
 
 const router = express.Router();
 
@@ -19,8 +20,6 @@ router.post(
   submitHostOnboarding
 );
 
-
-// Admin decision
-router.post('/admin/approve',  authGuard, requireRole('admin'), express.json(), adminApproveHost);
+router.get('/my-stats', authGuard, requireRole('host'), getMyPayoutStats);
 
 export default router;

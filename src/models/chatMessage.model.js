@@ -1,8 +1,6 @@
 import mongoose from 'mongoose';
 
 const { Schema } = mongoose;
-
-// File reference schema (tái sử dụng từ user model)
 const FileRefSchema = new Schema({
   bucket: String,
   region: String,
@@ -18,7 +16,7 @@ const ChatMessageSchema = new Schema({
   bookingId: {
     type: Schema.Types.ObjectId,
     ref: 'Booking',
-    required: false, // Không bắt buộc, có thể chat không cần booking
+    required: false, 
     index: true
   },
   senderId: {
@@ -41,17 +39,14 @@ const ChatMessageSchema = new Schema({
   message: {
     type: String,
     required: function() {
-      // Text message thì bắt buộc có message, file/image/voice thì không
       return this.messageType === 'text';
     },
     trim: true,
     default: ''
   },
-  // File attachment (cho image, file, voice)
   file: {
     type: FileRefSchema,
     required: function() {
-      // File/image/voice thì bắt buộc có file
       return ['image', 'file', 'voice'].includes(this.messageType);
     }
   },
@@ -65,7 +60,6 @@ const ChatMessageSchema = new Schema({
   }
 }, { timestamps: true });
 
-// Index để query nhanh các tin nhắn của một booking (nếu có)
 ChatMessageSchema.index({ bookingId: 1, createdAt: -1 });
 // Index để query tin nhắn chưa đọc
 ChatMessageSchema.index({ receiverId: 1, read: 1, createdAt: -1 });
@@ -75,4 +69,3 @@ ChatMessageSchema.index({ receiverId: 1, senderId: 1, createdAt: -1 });
 
 const ChatMessage = mongoose.model('ChatMessage', ChatMessageSchema);
 export default ChatMessage;
-

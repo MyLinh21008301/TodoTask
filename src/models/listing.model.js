@@ -20,11 +20,10 @@ const AddressSchema = new Schema({
   city: String
 }, { _id: false });
 
-// <<< THÊM SCHEMA CON CHO CHI TIẾT PHÒNG >>>
 const RoomDetailsSchema = new Schema({
-  bedrooms: { type: Number, default: 1 },    // Phòng ngủ
-  livingRooms: { type: Number, default: 0 }, // Phòng khách
-  bathrooms: { type: Number, default: 1 }    // Phòng tắm
+  bedrooms: { type: Number, default: 1 },
+  livingRooms: { type: Number, default: 0 },
+  bathrooms: { type: Number, default: 1 }
 }, { _id: false });
 
 const AdminApprovalSchema = new Schema({
@@ -34,9 +33,17 @@ const AdminApprovalSchema = new Schema({
   note: String
 }, { _id: false });
 
+// <<< 1. SCHEMA REVIEW (MỚI) >>>
+const ReviewSchema = new Schema({
+  bookingId: { type: Schema.Types.ObjectId, ref: 'Booking', required: true },
+  guestId:   { type: Schema.Types.ObjectId, ref: 'User', required: true },
+  rating:    { type: Number, required: true, min: 1, max: 5 },
+  comment:   { type: String, default: '' },
+  createdAt: { type: Date, default: Date.now }
+});
+
 const ListingSchema = new Schema({
   hostId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-
   title: { type: String, required: true },
   description: String,
 
@@ -50,31 +57,32 @@ const ListingSchema = new Schema({
   },
   address: AddressSchema,
   citySlug: { type: String, index: true },
-
-  // <<< THÊM TRƯỜNG MỚI VÀO SCHEMA CHÍNH >>>
   roomDetails: { type: RoomDetailsSchema, default: () => ({}) },
-
   amenities: [String],
   photos: [{ s3Key: String, url: String }],
-
   basePrice: MoneySchema,
   fees: FeesSchema,
-
   unitsCount: { type: Number, default: 1, min: 1 },
 
   cancellationPolicy: {
-    t3DaysRefundPct: { type: Number, default: 0, min: 0, max: 100 },
-    t2DaysRefundPct: { type: Number, default: 0, min: 0, max: 100 },
-    t1DayRefundPct: { type: Number, default: 0, min: 0, max: 100 }
+    t3DaysRefundPct: { type: Number, default: 90, min: 0, max: 100 },
+    t2DaysRefundPct: { type: Number, default: 50, min: 0, max: 100 },
+    t1DayRefundPct: { type: Number, default: 30, min: 0, max: 100 }
   },
 
   status: {
     type: String,
-    enum: ['draft','pending_review','approved','rejected','archived'],
+    enum: ['draft','pending_review','approved','rejected','archived','suspended'],
     default: 'pending_review',
     index: true
   },
-  adminApproval: { type: AdminApprovalSchema, default: { status: 'pending_review' } }
+  adminApproval: { type: AdminApprovalSchema, default: { status: 'pending_review' } },
+
+  // <<< 2. NHÚNG REVIEW VÀO LISTING >>>
+  reviews: [ReviewSchema], 
+  averageRating: { type: Number, default: 0, index: true },
+  reviewCount:   { type: Number, default: 0 },
+
 }, { timestamps: true });
 
 ListingSchema.index({ status: 1, citySlug: 1, 'basePrice.amount': 1 });

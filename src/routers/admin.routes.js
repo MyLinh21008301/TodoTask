@@ -5,21 +5,39 @@ import { requireRole } from '../middlewares/roles.js';
 import {
   getAdminDashboardCounts,
   listHostApplications,
-  listListingsForModeration
+  approveHostApplication,
+  listListingsForModeration,
+  adminListBookings,
+  getAdminRevenueStats,
+  adminListUsers,      
+  adminListAllListings,
+  adminToggleUserStatus,
+  getLatestPayoutBatch,    
+  listHostSettlements,   
+  confirmSettlementPayment
 } from '../controllers/admin.controller.js';
+import { adminModerateListing } from '../controllers/listing.controller.js'; 
 
 const router = express.Router();
 
-// Tất cả API Admin đều yêu cầu đăng nhập VÀ có role 'admin'
 router.use(authGuard, requireRole('admin'));
 
-// API lấy số đếm cho sidebar
 router.get('/dashboard-counts', getAdminDashboardCounts);
-
-// API lấy danh sách Host đang chờ
+router.get('/revenue-stats', getAdminRevenueStats);
 router.get('/host-applications', listHostApplications);
-
-// API lấy danh sách Listing đang chờ
+router.post('/approve-host', express.json(), approveHostApplication);
 router.get('/listings-moderation', express.json(), listListingsForModeration);
+router.post('/listings/:id/moderate', adminModerateListing);
+router.get('/bookings', adminListBookings);
+// User Management
+router.get('/users', adminListUsers);
+router.patch('/users/:id/status', express.json(), adminToggleUserStatus);
 
+// Listing Management (Tổng hợp)
+router.get('/listings', adminListAllListings);
+
+
+router.get('/payouts/batch/latest', getLatestPayoutBatch);
+router.get('/payouts/settlements', listHostSettlements);
+router.post('/payouts/settlements/:id/pay', confirmSettlementPayment);
 export default router;

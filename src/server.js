@@ -16,45 +16,62 @@ import listingRoutes from './routers/listing.routes.js';
 import bookingRoutes from './routers/booking.routes.js';
 import userRoutes from './routers/user.routes.js';
 import uploadRoutes from './routers/upload.routes.js';
-
-// --- Import từ cả 2 nhánh ---
 import notificationRoutes from './routers/notification.routes.js';
 import adminRoutes from './routers/admin.routes.js';
 import chatRoutes from './routers/chat.routes.js';
 import searchRoutes from './routers/search.routes.js';
 import { paymentWebhook } from './controllers/booking.controller.js';
 import { setupChatSocket } from './services/chat.socket.js';
+import promotionRoutes from './routers/promotion.routes.js';
 
 const app = express();
-const httpServer = createServer(app); // Cần cho Socket.io
+const httpServer = createServer(app); 
+
 const PORT = process.env.PORT || 5001;
 
-app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:5001', 'http://127.0.0.1:5001'], 
-  credentials: true 
-}));
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5001',
+  'http://127.0.0.1:5001',
+  process.env.FRONTEND_URL 
+].filter(Boolean); 
 
-// === [HEAD] ROUTE WEBHOOK (PHẢI ĐẶT TRƯỚC express.json()) ===
-// Giữ lại cái này để PayOS hoạt động
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log("Blocked by CORS:", origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+
+app.use(cors(corsOptions));
+
 app.post(
   '/api/bookings/webhook',
-  express.raw({ type: '*/*' }), 
-  (req, _res, next) => {         
+  express.raw({ type: 'application/json' }),
+  (req, _res, next) => {
     try {
-      req.rawBody = req.body; 
-      const bodyString = req.body.toString('utf8'); 
-      req.body = bodyString ? JSON.parse(bodyString) : {}; 
+      req.rawBody = req.body;
+      req.body = JSON.parse(req.body.toString('utf8'));
       next();
     } catch (e) {
-        console.error("Error parsing webhook body:", e);
-        next(e);
+      next(e);
     }
   },
   paymentWebhook 
 );
+
 const io = new Server(httpServer, {
   cors: {
-    origin: ['http://localhost:5173', 'http://localhost:5001', 'http://127.0.0.1:5001'],
+    origin: allowedOrigins, 
     credentials: true,
     methods: ['GET', 'POST']
   }
@@ -73,7 +90,7 @@ app.get('/api/auth/config', (_req, res) => {
   res.json({ googleClientId: process.env.GOOGLE_CLIENT_ID || '' });
 });
 
-app.get('/health', (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
+app.get('/health', (_req, res) => res.json({ ok: true, status: 'Server is running', time: new Date().toISOString() }));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/host', hostRoutes);    
@@ -85,7 +102,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/admin', adminRoutes); 
 app.use('/api/chat', chatRoutes);   
 app.use('/api/search', searchRoutes);
-
+app.use('/api/promotions', promotionRoutes);
 
 app.use(errorHandler);
 
@@ -93,6 +110,6 @@ await connectDB();
 
 httpServer.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
-    console.log(`>>> Allowing requests from http://localhost:5173`);
-    console.log(`>>> WebSocket server ready for realtime chat`);
+    console.log(`Allowed Origins:`, allowedOrigins);
+    console.log(`WebSocket server ready`);
 });

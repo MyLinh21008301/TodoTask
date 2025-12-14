@@ -1,3 +1,4 @@
+// src/models/booking.model.js
 import mongoose from 'mongoose';
 const { Schema } = mongoose;
 
@@ -22,29 +23,30 @@ const Signature = new Schema({
   device: String
 }, { _id:false });
 
+const RefundInfoSchema = new Schema({
+  bankName: String,
+  accountNumber: String,
+  accountHolder: String,
+  refundAmount: Number,   
+  refundReason: String,  
+  status: { type: String, enum: ['pending', 'completed', 'rejected'], default: 'pending' },
+  refundedAt: Date,       // Thời điểm Admin bấm xác nhận đã chuyển khoản
+  imageProof: String      
+}, { _id: false });
+
 const BookingSchema = new Schema({
   guestId:   { type: Schema.Types.ObjectId, ref:'User', required: true, index: true },
   hostId:    { type: Schema.Types.ObjectId, ref:'User', required: true, index: true },
   listingId: { type: Schema.Types.ObjectId, ref:'Listing', required: true, index: true },
   unitId:    { type: Schema.Types.ObjectId, ref:'ListingUnit' },
-
   orderCode: { type: String, index: true, unique: true, sparse: true },
 
   status: {
     type: String,
     enum: [
-      'requested',
-      'host_accepted', // Giữ lại để có thể dùng trong tương lai, dù luồng hiện tại bỏ qua
-      'host_rejected',
-      'expired',
-      'awaiting_payment',
-      'payment_processing',
-      'paid',
-      'completed',
-      'cancelled_by_guest',
-      'cancelled_by_host',
-      'refund_pending',
-      'refunded'
+      'requested', 'host_accepted', 'host_rejected', 'expired',
+      'awaiting_payment', 'payment_processing', 'paid', 'completed',
+      'cancelled_by_guest', 'cancelled_by_host', 'refund_pending', 'refunded'
     ],
     default: 'requested',
     index: true
@@ -91,6 +93,7 @@ const BookingSchema = new Schema({
       raw: Schema.Types.Mixed
     }]
   },
+  refund: { type: RefundInfoSchema, default: null },
 
   contract: {
     previewHash: String,
@@ -101,31 +104,22 @@ const BookingSchema = new Schema({
   },
 
   expiresAt: Date,
-
   requestedAt: { type: Date, default: Date.now },
   hostRespondedAt: Date,
   completedAt: Date,
   cancelledAt: Date,
-  cancelReason: String
+  cancelReason: String,
+
+  isReviewed: { type: Boolean, default: false }
+
 }, { timestamps: true });
 
 BookingSchema.index({ guestId:1, status:1, createdAt:-1 });
 BookingSchema.index({ hostId:1, status:1, createdAt:-1 });
-
-BookingSchema.index(
-  {
-    listingId: 1,
-    checkinDate: 1,
-    checkoutDate: 1
-  },
-  {
+BookingSchema.index({ listingId: 1, checkinDate: 1, checkoutDate: 1 }, {
     unique: true,
-    partialFilterExpression: {
-      status: { $in: ['awaiting_payment', 'payment_processing', 'paid', 'completed'] }
-    }
-  }
-);
-
+    partialFilterExpression: { status: { $in: ['awaiting_payment', 'payment_processing', 'paid', 'completed'] } }
+});
 
 const Booking = mongoose.model('Booking', BookingSchema);
 export default Booking;

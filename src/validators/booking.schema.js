@@ -17,13 +17,17 @@ export const initiatePaySchema = z.object({
   method: z.enum(['bank_qr','card']).default('bank_qr')
 });
 
-// === SỬA LẠI HOÀN TOÀN WEBHOOK SCHEMA ===
 export const webhookSchema = z.object({
-  code: z.string(), // "00" có nghĩa là thành công
+  code: z.string(), 
   success: z.boolean(),
   data: z.object({
     orderCode: z.coerce.string(), // Tự động chuyển số 176... thành chuỗi "176..."
   }).passthrough(), // Cho phép các trường khác trong 'data'
   signature: z.string()
 });
-// === KẾT THÚC SỬA LỖI ===
+export const cancelBookingSchema = z.object({
+  reason: z.string().optional(),
+  bankName: z.string().min(1, "Vui lòng nhập tên ngân hàng"),
+  accountNumber: z.string().min(1, "Vui lòng nhập số tài khoản"),
+  accountHolder: z.string().min(1, "Vui lòng nhập tên chủ tài khoản")
+});

@@ -1,132 +1,3 @@
-// import User from '../models/user.model.js';
-// import RefreshToken from '../models/refreshToken.model.js';
-// import {
-//   hostApplySchema, hostKycSchema, hostPayoutDevSchema,
-//   hostAgreementSchema, adminApproveHostSchema
-// } from '../validators/host.schema.js';
-
-// export async function getHostStatus(req, res) {
-//   const u = req.user;
-//   res.json({ roles: u.roles, host: u.host || null });
-// }
-
-// export async function applyHost(req, res, next) {
-//   try {
-//     hostApplySchema.parse(req.body || {});
-//     const u = req.user;
-
-//     if (u.roles.includes('host')) {
-//       return res.json({ message: 'Already a host', status: 'approved' });
-//     }
-
-//     if (!u.host) u.host = {};
-//     u.host.status = 'pending';
-//     u.host.submittedAt = new Date();
-//     u.host.reason = undefined;
-//     u.host.onboardingSteps = u.host.onboardingSteps || {
-//       kycSubmitted: false, payoutLinked: false, agreementSigned: false
-//     };
-//     await u.save();
-
-//     res.json({ message: 'Host application created', status: u.host.status });
-//   } catch (e) { next(e); }
-// }
-
-// export async function submitKyc(req, res, next) {
-//   try {
-//     const body = hostKycSchema.parse(req.body);
-//     const u = req.user;
-//     if (!u.host) return res.status(400).json({ message: 'No host application' });
-
-//     u.host.kyc = {
-//       fullName: body.fullName,
-//       dob: body.dob,
-//       address: body.address,
-//       governmentId: { front: body.idFront, back: body.idBack }
-//     };
-//     u.host.onboardingSteps.kycSubmitted = true;
-//     await u.save();
-
-//     res.json({ message: 'KYC submitted' });
-//   } catch (e) { next(e); }
-// }
-
-// // Dev/manual payout info (production dùng Stripe Connect)
-// export async function linkPayoutDev(req, res, next) {
-//   try {
-//     const body = hostPayoutDevSchema.parse(req.body);
-//     const u = req.user;
-//     if (!u.host) return res.status(400).json({ message: 'No host application' });
-
-//     u.host.payout = {
-//       provider: 'manual',
-//       bank: {
-//         bankName: body.bankName,
-//         accountHolder: body.accountHolder,
-//         accountNumberMasked: body.accountNumberMasked
-//       },
-//       ready: true
-//     };
-//     u.host.onboardingSteps.payoutLinked = true;
-//     await u.save();
-
-//     res.json({ message: 'Payout linked (dev/manual)' });
-//   } catch (e) { next(e); }
-// }
-
-// export async function signHostAgreement(req, res, next) {
-//   try {
-//     const body = hostAgreementSchema.parse(req.body);
-//     const u = req.user;
-//     if (!u.host) return res.status(400).json({ message: 'No host application' });
-
-//     // dùng method attachSignature nếu muốn push vào signature chung
-//     u.host.agreement = {
-//       acceptedAt: new Date(),
-//       signature: {
-//         ...body.signature,
-//         signedAt: new Date()
-//       },
-//       version: '2025-10-01'
-//     };
-//     u.host.onboardingSteps.agreementSigned = true;
-//     await u.save();
-
-//     res.json({ message: 'Agreement signed' });
-//   } catch (e) { next(e); }
-// }
-
-// // Admin approve/reject
-// export async function adminApproveHost(req, res, next) {
-//   try {
-//     const { userId, approve, reason } = adminApproveHostSchema.parse(req.body);
-//     const u = await User.findById(userId);
-//     if (!u?.host) return res.status(404).json({ message: 'Application not found' });
-
-//     if (approve) {
-//       u.host.status = 'approved';
-//       u.host.approvedAt = new Date();
-//       u.host.reason = undefined;
-//       if (!u.roles.includes('host')) u.roles.push('host');
-
-//       // Bảo mật: revoke refresh tokens cũ để phiên mới có role mới
-//       await RefreshToken.updateMany(
-//         { user: u._id, revokedAt: { $exists: false } },
-//         { $set: { revokedAt: new Date() } }
-//       );
-//       await u.save();
-
-//       res.json({ message: 'Approved', roles: u.roles });
-//     } else {
-//       u.host.status = 'rejected';
-//       u.host.rejectedAt = new Date();
-//       u.host.reason = reason || 'Not eligible';
-//       await u.save();
-//       res.json({ message: 'Rejected', reason: u.host.reason });
-//     }
-//   } catch (e) { next(e); }
-// }
-
 // src/controllers/host.controller.js
 import User from '../models/user.model.js';
 import RefreshToken from '../models/refreshToken.model.js';
@@ -134,6 +5,7 @@ import {
   simpleHostOnboardingSchema,
   adminApproveHostSchema
 } from '../validators/host.schema.js';
+import { PayoutBatch, HostSettlement } from '../models/payout.model.js';
 
 // === THÊM CÁC IMPORT ĐỂ UPLOAD S3 & CRYPTO ===
 import { s3 } from '../config/s3.js';
@@ -256,33 +128,136 @@ export async function submitHostOnboarding(req, res, next) {
     next(e);
   }
 }
-
-// Admin approve/reject (Vẫn giữ nguyên)
-export async function adminApproveHost(req, res, next) {
+export async function getMyPayoutStats(req, res, next) {
   try {
-    const { userId, approve, reason } = adminApproveHostSchema.parse(req.body);
-    const u = await User.findById(userId);
-    if (!u?.host) return res.status(404).json({ message: 'Application not found' });
+    const hostId = req.user._id;
 
-    if (approve) {
-      u.host.status = 'approved';
-      u.host.approvedAt = new Date();
-      u.host.reason = undefined;
-      if (!u.roles.includes('host')) u.roles.push('host');
+    // 1. Lấy tất cả các khoản thanh toán (Settlement) của Host này
+    // Sắp xếp mới nhất lên đầu để dễ nhìn
+    const settlements = await HostSettlement.find({ hostId })
+      .populate('batchId', 'month year fromDate toDate') // Lấy thông tin tháng/năm từ Batch cha
+      .sort({ createdAt: -1 });
 
-      await RefreshToken.updateMany(
-        { user: u._id, revokedAt: { $exists: false } },
-        { $set: { revokedAt: new Date() } }
-      );
-      await u.save();
+    // 2. Phân loại dữ liệu để trả về Frontend
+    let nextPayoutAmount = 0; // Số tiền sắp nhận (đang pending)
+    const history = [];
 
-      res.json({ message: 'Approved', roles: u.roles });
-    } else {
-      u.host.status = 'rejected';
-      u.host.rejectedAt = new Date();
-      u.host.reason = reason || 'Not eligible';
-      await u.save();
-      res.json({ message: 'Rejected', reason: u.host.reason });
+    for (const item of settlements) {
+      const batch = item.batchId;
+      if (!batch) continue;
+
+      // Format dữ liệu lịch sử
+      history.push({
+        id: item._id,
+        // Hiển thị tên kỳ thanh toán: "Tháng 10/2023"
+        batchName: `Tháng ${batch.month}/${batch.year}`,
+        period: `${new Date(batch.fromDate).toLocaleDateString('vi-VN')} - ${new Date(batch.toDate).toLocaleDateString('vi-VN')}`,
+        amount: item.payoutAmount, // Số tiền thực nhận (đã trừ phí)
+        status: item.status,       // 'pending' hoặc 'paid'
+        paidAt: item.paidAt,       // Ngày Admin chuyển khoản (nếu có)
+        totalBookings: item.totalBookings // Số đơn trong kỳ này
+      });
+
+      // Nếu đang pending -> Cộng dồn vào "Sắp thanh toán"
+      // (Thường mỗi tháng chỉ có 1 settlement pending, nhưng cộng dồn cho chắc)
+      if (item.status === 'pending') {
+        nextPayoutAmount += item.payoutAmount;
+      }
     }
-  } catch (e) { next(e); }
+
+    res.json({
+      nextPayout: nextPayoutAmount,
+      history: history
+    });
+
+  } catch (e) {
+    next(e);
+  }
 }
+export const getHostRevenueStats = async (req, res, next) => {
+  try {
+    const hostId = req.user._id;
+    // Lấy năm từ request, nếu không có thì lấy năm hiện tại
+    const selectedYear = parseInt(req.query.year) || new Date().getFullYear();
+
+    const projectNetRevenue = {
+        $project: {
+          year: { $year: "$checkoutDate" },
+          month: { $month: "$checkoutDate" },
+          // Công thức tính tiền thực nhận (95% của Net Revenue)
+          netPayout: { 
+             $multiply: [
+               { $subtract: ["$pricing.total", { $ifNull: ["$refund.refundAmount", 0] }] },
+               0.95 
+             ]
+          }
+        }
+    };
+
+    const matchStage = {
+      hostId: hostId,
+      status: { $in: ['paid', 'completed', 'refunded', 'cancelled_by_guest', 'cancelled_by_host'] },
+      checkoutDate: { $exists: true }
+    };
+
+    const stats = await Booking.aggregate([
+      { $match: matchStage },
+      projectNetRevenue,
+      {
+         $facet: {
+            // 1. Lấy danh sách TẤT CẢ các năm có doanh thu (để làm Dropdown)
+            availableYears: [
+               { $group: { _id: "$year" } },
+               { $sort: { _id: -1 } } // Năm mới nhất lên đầu
+            ],
+            // 2. Tính tổng doanh thu CỦA NĂM ĐƯỢC CHỌN
+            totalForYear: [
+               { $match: { year: selectedYear } },
+               { $group: { _id: null, total: { $sum: "$netPayout" }, count: { $sum: 1 } } }
+            ],
+            // 3. Biểu đồ theo tháng CỦA NĂM ĐƯỢC CHỌN
+            monthly: [
+               { $match: { year: selectedYear } },
+               {
+                 $group: {
+                   _id: "$month", 
+                   revenue: { $sum: "$netPayout" },
+                   count: { $sum: 1 }
+                 }
+               },
+               { $sort: { _id: 1 } }
+            ]
+         }
+      }
+    ]);
+
+    const availableYears = stats[0].availableYears.map(y => y._id);
+    // Nếu chưa có năm nào, mặc định trả về năm nay
+    if (availableYears.length === 0) availableYears.push(new Date().getFullYear());
+
+    const totalData = stats[0].totalForYear[0] || { total: 0, count: 0 };
+    const monthlyData = stats[0].monthly || [];
+
+    // Format dữ liệu biểu đồ (đủ 12 tháng)
+    const chartData = Array.from({ length: 12 }, (_, i) => {
+      const month = i + 1;
+      const found = monthlyData.find(m => m._id === month);
+      return {
+        name: `T${month}`,
+        revenue: found ? Math.round(found.revenue) : 0,
+        bookings: found ? found.count : 0
+      };
+    });
+
+    res.json({
+      selectedYear,
+      availableYears, // Danh sách năm [2025, 2024...]
+      totalRevenue: Math.round(totalData.total), // Tổng của năm chọn
+      totalBookings: totalData.count,
+      chartData
+    });
+
+  } catch (e) {
+    next(e);
+  }
+};

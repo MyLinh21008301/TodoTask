@@ -35,9 +35,9 @@ export const createListingSchema = z.object({
 
   unitsCount: z.number().int().min(1).optional(),
   cancellationPolicy: z.object({
-    t3DaysRefundPct: z.number().min(0).max(100).optional(),
-    t2DaysRefundPct: z.number().min(0).max(100).optional(),
-    t1DayRefundPct: z.number().min(0).max(100).optional()
+    t3DaysRefundPct: z.number().min(0).max(100).default(90),
+    t2DaysRefundPct: z.number().min(0).max(100).default(50),
+    t1DayRefundPct: z.number().min(0).max(100).default(30)
   }).optional()
 });
 export const updateListingSchema = createListingSchema.partial();
@@ -58,7 +58,7 @@ export const mineQuerySchema = z.object({
     minPrice: z.string().optional(),
     maxPrice: z.string().optional(),
     amenities: z.string().optional(), 
-    // geo search
+    hostId: z.string().optional(),
     lng: z.string().optional(),
     lat: z.string().optional(),
     radius: z.string().optional(), 

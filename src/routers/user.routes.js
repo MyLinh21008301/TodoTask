@@ -2,6 +2,10 @@
 import express from 'express';
 import { authGuard } from '../middlewares/auth.js';
 import { 
+  toggleWishlist, 
+  getWishlist 
+} from '../controllers/user.controller.js';
+import { 
   getUserPublicProfileById,
   getCurrentUser,
   updateUserProfile,
@@ -12,21 +16,25 @@ import {
 const router = express.Router();
 
 // Protected routes: Quản lý thông tin cá nhân (cần authentication)
-// Phải đặt trước route /:id để tránh conflict với "me"
 
-// Get information of current user
 router.get('/me', authGuard, getCurrentUser);
 
-// Update information of current user
-router.patch('/me', authGuard, express.json(), updateUserProfile);
+// [SỬA Ở ĐÂY]: Đổi từ patch -> put để khớp với Frontend
+router.put('/me', authGuard, express.json(), updateUserProfile);
 
-// Change password
-router.patch('/me/password', authGuard, express.json(), changePassword);
+// Change password (Thường đổi pass cũng có thể dùng PUT hoặc PATCH, nhưng nên thống nhất)
+router.put('/me/password', authGuard, express.json(), changePassword); 
 
 // Delete account (soft delete)
 router.delete('/me', authGuard, deleteUserAccount);
 
+router.post('/wishlist/toggle', authGuard, toggleWishlist);
+router.get('/wishlist', authGuard, getWishlist);
+
 // Public route: Get public information of user by ID (must be after /me)
 router.get('/:id', getUserPublicProfileById);
+
+
+
 
 export default router;
