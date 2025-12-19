@@ -461,31 +461,6 @@ export async function listMineHost(req, res, next) {
   } catch (e) { next(e); }
 }
 
-
-function calculateRefundAmount(booking) {
-  const checkin = new Date(booking.checkinDate);
-  const now = new Date();
-  const diffTime = checkin.getTime() - now.getTime();
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-  let refundPct = 0;
-  const policy = booking.cancellationPolicy || {};
-
-  if (diffDays >= 3) {
-    refundPct = policy.t3DaysRefundPct || 90; 
-  } else if (diffDays >= 2) {
-    refundPct = policy.t2DaysRefundPct || 50; 
-  } else if (diffDays >= 1) {
-    refundPct = policy.t1DayRefundPct || 30; 
-  } else {
-    refundPct = 0; 
-  }
-  const totalPaid = booking.payment?.txns?.reduce((acc, txn) => acc + (txn.status === 'succeeded' ? txn.amount : 0), 0) || 0;
-  
-  const refundAmount = Math.round(totalPaid * (refundPct / 100));
-
-  return { refundPct, refundAmount };
-}
 export async function signBooking(req, res, next) {
   try {
     const { id } = req.params;
@@ -562,83 +537,6 @@ export const getHostDashboardCounts = async (req, res, next) => {
     next(e);
   }
 };
-export const getHostRevenueStats = async (req, res, next) => {
-  try {
-    const hostId = req.user._id;
-    const currentYear = new Date().getFullYear();
-    const projectNetRevenue = {
-        $project: {
-          checkoutDate: 1,
-          createdAt: 1,
-          netPayout: { 
-             $multiply: [
-               { $subtract: ["$pricing.total", { $ifNull: ["$refund.refundAmount", 0] }] },
-               0.95 
-             ]
-          }
-        }
-    };
-
-    const matchStage = {
-      hostId: hostId,
-      status: { $in: ['paid', 'completed', 'refunded', 'cancelled_by_guest', 'cancelled_by_host'] },
-      checkoutDate: { $exists: true }
-    };
-
-    const stats = await Booking.aggregate([
-      { $match: matchStage },
-      projectNetRevenue,
-      {
-         $facet: {
-            total: [
-               { $group: { _id: null, total: { $sum: "$netPayout" }, count: { $sum: 1 } } }
-            ],
-            monthly: [
-               { 
-                 $match: { 
-                    $expr: { $eq: [{ $year: "$checkoutDate" }, currentYear] } 
-                 } 
-               },
-               {
-                 $group: {
-                   _id: { month: { $month: "$checkoutDate" } }, 
-                   revenue: { $sum: "$netPayout" },
-                   count: { $sum: 1 }
-                 }
-               },
-               { $sort: { "_id.month": 1 } }
-            ]
-         }
-      }
-    ]);
-
-    const totalData = stats[0].total[0] || { total: 0, count: 0 };
-    const monthlyData = stats[0].monthly || [];
-
-    const chartData = Array.from({ length: 12 }, (_, i) => {
-      const month = i + 1;
-      const found = monthlyData.find(m => m._id.month === month);
-      return {
-        name: `T${month}`,
-        revenue: found ? Math.round(found.revenue) : 0,
-        bookings: found ? found.count : 0
-      };
-    });
-    const currentMonth = new Date().getMonth() + 1;
-    const currentMonthData = chartData.find(d => d.name === `T${currentMonth}`);
-
-    res.json({
-      totalRevenue: Math.round(totalData.total),
-      totalBookings: totalData.count,
-      thisMonthRevenue: currentMonthData?.revenue || 0,
-      chartData
-    });
-
-  } catch (e) {
-    next(e);
-  }
-};
-
 export async function getUnavailableDates(req, res, next) {
   try {
     const { listingId } = req.params;
@@ -664,7 +562,7 @@ export async function getUnavailableDates(req, res, next) {
 export async function cancelBooking(req, res, next) {
   try {
     const { id } = req.params;
-    const { reason, bankName, accountNumber, accountHolder } = cancelBookingSchema.parse(req.body);
+    const { reason, bankName, accountNumber, accountHolder } = req.body; 
     const userId = req.user._id;
 
     const booking = await Booking.findById(id);
@@ -674,47 +572,38 @@ export async function cancelBooking(req, res, next) {
       return res.status(403).json({ message: 'Unauthorized' });
     }
 
-    if (!['awaiting_payment', 'paid', 'host_accepted'].includes(booking.status)) {
+    // Cho phép hủy nếu đang chờ duyệt, chờ thanh toán, hoặc đã thanh toán
+    if (!['requested', 'awaiting_payment', 'paid', 'host_accepted'].includes(booking.status)) {
       return res.status(400).json({ message: 'Không thể hủy đơn ở trạng thái này' });
     }
-
-    let responseMessage = '';
     if (booking.status !== 'paid') {
       booking.status = 'cancelled_by_guest';
-      booking.cancelReason = reason || 'Guest cancelled before payment';
+      booking.cancelReason = reason || 'Guest cancelled';
       booking.cancelledAt = new Date();
       booking.pricing.hostPayout = 0;
       booking.pricing.platformFee = 0;
       
       await booking.save();
-      const refundAmountFormatted = new Intl.NumberFormat('vi-VN').format(financials.refundAmount);
-
       await Notification.create({
         userId: booking.hostId,
-        message: `Đơn ${booking.orderCode} đã bị hủy. Cần hoàn lại: ${refundAmountFormatted}đ cho khách.`,
-        link: `/host/bookings?tab=refund_pending` 
+        message: `Khách đã hủy yêu cầu đặt phòng #${booking.orderCode || booking._id.toString().slice(-6)}.`,
+        link: `/host/bookings?tab=cancelled` 
       });
-
-      const adminUser = await User.findOne({ roles: 'admin' }); 
-      if (adminUser) {
-        await Notification.create({
-          userId: adminUser._id,
-          message: `Yêu cầu hoàn tiền mới: ${refundAmountFormatted}đ cho đơn ${booking.orderCode}.`,
-          link: `/admin/refunds`
-        });
-      }
-
-
 
       return res.json({ message: 'Đã hủy yêu cầu đặt phòng thành công.' });
     } 
     
     else {
+      // Bắt buộc phải có thông tin ngân hàng để hoàn tiền
+      if (!bankName || !accountNumber || !accountHolder) {
+         return res.status(400).json({ message: 'Vui lòng cung cấp thông tin ngân hàng để hoàn tiền.' });
+      }
       const financials = calculateCancellationFinancials(booking);
 
       booking.status = 'refund_pending'; 
       booking.cancelReason = reason;
       booking.cancelledAt = new Date();
+      
       booking.refund = {
           bankName,
           accountNumber,
@@ -724,19 +613,34 @@ export async function cancelBooking(req, res, next) {
           status: 'pending'
       };
 
+      // Cập nhật lại doanh thu thực nhận của Host sau khi trừ hoàn tiền
       booking.pricing.hostPayout = financials.newHostPayout;   
       booking.pricing.platformFee = financials.newPlatformFee; 
 
       await booking.save();
+      
+      // Thông báo cho Host (Về số tiền thực nhận thay đổi)
       await Notification.create({
         userId: booking.hostId,
-        message: `Đơn ${booking.orderCode} đã bị khách hủy. Doanh thu thực nhận: ${new Intl.NumberFormat('vi-VN').format(financials.newHostPayout)}đ`,
+        message: `Đơn ${booking.orderCode} đã bị khách hủy. Doanh thu thực nhận cập nhật: ${new Intl.NumberFormat('vi-VN').format(financials.newHostPayout)}đ`,
         link: `/host/bookings`
       });
 
-      responseMessage = `Yêu cầu hủy thành công. Số tiền hoàn dự kiến: ${new Intl.NumberFormat('vi-VN').format(financials.refundAmount)}đ. Admin sẽ xử lý sớm nhất.`;
+      const refundAmountFormatted = new Intl.NumberFormat('vi-VN').format(financials.refundAmount);
       
-      return res.json({ message: responseMessage });
+      // Thông báo cho Admin để vào xử lý hoàn tiền
+      const adminUser = await User.findOne({ roles: 'admin' }); 
+      if (adminUser) {
+        await Notification.create({
+          userId: adminUser._id,
+          message: `Yêu cầu hoàn tiền mới: ${refundAmountFormatted}đ cho đơn ${booking.orderCode}.`,
+          link: `/admin/refunds`
+        });
+      }
+
+      return res.json({ 
+          message: `Yêu cầu hủy thành công. Số tiền hoàn dự kiến: ${refundAmountFormatted}đ. Admin sẽ xử lý sớm nhất.` 
+      });
     }
 
   } catch (e) {

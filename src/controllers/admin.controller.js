@@ -267,75 +267,63 @@ export async function adminToggleUserStatus(req, res, next) {
   }
 }
 
-/**
- *  Lấy thống kê doanh thu toàn sàn cho Admin Dashboard
- * (Đã tính toán trừ đi tiền hoàn trả cho các đơn hủy)
- */
+// /**
+//  *  Lấy thống kê doanh thu toàn sàn cho Admin Dashboard
+//  * (Đã tính toán trừ đi tiền hoàn trả cho các đơn hủy)
+//  */
 export async function getAdminRevenueStats(req, res, next) {
   try {
+    const { year, month } = req.query;
     const currentYear = new Date().getFullYear();
+    const selectedYear = year && !isNaN(Number(year)) ? Number(year) : currentYear;
+    let selectedMonth = null;
+    if (month && month !== 'all' && !isNaN(Number(month))) selectedMonth = Number(month);
+    let startDate, endDate;
+    if (selectedMonth) {
+        startDate = new Date(selectedYear, selectedMonth - 1, 1, 0, 0, 0);
+        endDate = new Date(selectedYear, selectedMonth, 0, 23, 59, 59, 999);
+    } else {
+        startDate = new Date(selectedYear, 0, 1, 0, 0, 0);
+        endDate = new Date(selectedYear, 11, 31, 23, 59, 59, 999);
+    }
+    const groupId = selectedMonth 
+        ? { $dayOfMonth: "$checkoutDate" } 
+        : { $month: "$checkoutDate" };    
 
-    // 1. Lấy số lượng tổng quan (User, Listing...)
-    const [totalHosts, totalGuests, activeListings] = await Promise.all([
-      User.countDocuments({ roles: 'host' }),
-      User.countDocuments({ roles: 'guest' }), // Hoặc loại trừ host/admin
-      Listing.countDocuments({ status: 'approved' })
-    ]);
-
-    // 2. AGGREGATION: Tính toán tài chính chuẩn xác
     const financialStats = await Booking.aggregate([
       {
         $match: {
-          // Chỉ lấy các đơn đã hoàn thành hoặc hủy (có phát sinh tiền phạt)
-          status: { $in: ['completed', 'paid', 'refunded', 'cancelled_by_guest', 'cancelled_by_host'] },
-          // QUAN TRỌNG: Tính theo ngày CHECK-OUT (Khớp với Payout)
-          checkoutDate: { $exists: true, $ne: null }
+            status: { $in: ['completed', 'paid', 'refunded', 'cancelled_by_guest', 'cancelled_by_host'] },
+            checkoutDate: { $gte: startDate, $lte: endDate }
         }
       },
       {
         $project: {
-          checkoutDate: 1,
-          status: 1,
-          // Tính Doanh thu Ròng = Tổng tiền khách trả - Tiền đã hoàn lại
           netRevenue: { 
-            $subtract: [ 
-              "$pricing.total", 
-              { $ifNull: ["$refund.refundAmount", 0] } 
-            ] 
-          }
+            $subtract: [ "$pricing.total", { $ifNull: ["$refund.refundAmount", 0] } ] 
+          },
+          checkoutDate: 1 
         }
       },
-      {
-        // Loại bỏ các đơn hoàn tiền 100% (Không có doanh thu)
-        $match: {
-          netRevenue: { $gt: 0 }
-        }
-      },
+      { $match: { netRevenue: { $gt: 0 } } },
       {
         $facet: {
-          // A. Tính tổng trọn đời (Lifetime)
-          overall: [
+          summary: [
             {
               $group: {
                 _id: null,
-                totalGMV: { $sum: "$netRevenue" },      // Tổng dòng tiền qua sàn (đã trừ refund)
-                totalProfit: { $sum: { $multiply: ["$netRevenue", 0.05] } }, // 5% Lợi nhuận sàn
+                totalGMV: { $sum: "$netRevenue" },
+                totalProfit: { $sum: { $multiply: ["$netRevenue", 0.05] } },
                 totalBookings: { $sum: 1 }
               }
             }
           ],
-          // B. Tính biểu đồ theo từng tháng trong năm nay
-          monthly: [
-            {
-              $match: {
-                $expr: { $eq: [{ $year: "$checkoutDate" }, currentYear] }
-              }
-            },
+          chart: [
             {
               $group: {
-                _id: { $month: "$checkoutDate" },
+                _id: groupId,
                 gmv: { $sum: "$netRevenue" },
-                revenue: { $sum: { $multiply: ["$netRevenue", 0.05] } }, // Lợi nhuận
+                revenue: { $sum: { $multiply: ["$netRevenue", 0.05] } },
                 count: { $sum: 1 }
               }
             },
@@ -345,40 +333,63 @@ export async function getAdminRevenueStats(req, res, next) {
       }
     ]);
 
-    const overall = financialStats[0].overall[0] || { totalGMV: 0, totalProfit: 0, totalBookings: 0 };
-    const monthly = financialStats[0].monthly || [];
+    const result = financialStats[0];
+    const summary = result.summary[0] || { totalGMV: 0, totalProfit: 0, totalBookings: 0 };
+    const rawChart = result.chart || [];
+    if (rawChart.length > 0) console.log(`   Sample Chart Item:`, rawChart[0]);
+    let finalChartData = [];
 
-    // 3. Chuẩn hóa dữ liệu biểu đồ (Lấp đầy các tháng thiếu bằng 0)
-    const chartData = Array.from({ length: 12 }, (_, i) => {
-      const month = i + 1;
-      const found = monthly.find(m => m._id === month);
-      return {
-        name: `T${month}`,
-        gmv: found ? Math.round(found.gmv) : 0,          // Tổng GMV
-        revenue: found ? Math.round(found.revenue) : 0,  // Lợi nhuận (5%)
-        bookings: found ? found.count : 0
-      };
-    });
+    if (selectedMonth) {
+        const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+        finalChartData = Array.from({ length: daysInMonth }, (_, i) => {
+            const day = i + 1;
+            const data = rawChart.find(item => item._id === day);
+            return {
+                name: `${day}/${selectedMonth}`,
+                gmv: data ? Math.round(data.gmv) : 0,
+                revenue: data ? Math.round(data.revenue) : 0,
+                bookings: data ? data.count : 0
+            };
+        });
+    } else {
+        finalChartData = Array.from({ length: 12 }, (_, i) => {
+            const m = i + 1;
+            const data = rawChart.find(item => item._id === m);
+            return {
+                name: `T${m}`,
+                gmv: data ? Math.round(data.gmv) : 0,
+                revenue: data ? Math.round(data.revenue) : 0,
+                bookings: data ? data.count : 0
+            };
+        });
+    }
+
+    const [totalHosts, totalGuests, activeListings] = await Promise.all([
+        User.countDocuments({ roles: 'host' }),
+        User.countDocuments({ roles: 'guest' }),
+        Listing.countDocuments({ status: 'approved' })
+    ]);
 
     res.json({
+      meta: { year: selectedYear, month: selectedMonth || 'all' },
       counts: {
         hosts: totalHosts,
         guests: totalGuests,
         listings: activeListings,
-        bookings: overall.totalBookings
+        bookings: summary.totalBookings
       },
       revenue: {
-        totalGMV: Math.round(overall.totalGMV),       // Hiển thị ở Card "Tổng Doanh Thu (GMV)"
-        totalProfit: Math.round(overall.totalProfit)  // Hiển thị ở Card "Lợi Nhuận Thực (Net)"
+        totalGMV: Math.round(summary.totalGMV),
+        totalProfit: Math.round(summary.totalProfit)
       },
-      chartData // Dữ liệu vẽ biểu đồ AreaChart
+      chartData: finalChartData
     });
 
   } catch (e) {
+    console.error("Stats Error:", e);
     next(e);
   }
 }
-
 /**
  * Lấy thông tin đợt chi trả hiện tại (Tự động tính toán)
  */

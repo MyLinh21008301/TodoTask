@@ -7,15 +7,13 @@ import {
 } from '../validators/host.schema.js';
 import { PayoutBatch, HostSettlement } from '../models/payout.model.js';
 
-// === THÊM CÁC IMPORT ĐỂ UPLOAD S3 & CRYPTO ===
 import { s3 } from '../config/s3.js';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { v4 as uuidv4 } from 'uuid';
-import crypto from 'crypto'; // Import crypto để tạo hash
-// === KẾT THÚC IMPORT ===
+import crypto from 'crypto'; 
+import Booking from '../models/booking.model.js';
 
 
-// Hàm này vẫn hữu ích để FE kiểm tra
 export async function getHostStatus(req, res) {
   const u = req.user;
   res.json({ roles: u.roles, host: u.host || null });
@@ -41,7 +39,6 @@ export async function submitHostOnboarding(req, res, next) {
       });
     }
 
-    // 2. Upload chữ ký lên S3
     const base64Data = body.signature.image.replace(/^data:image\/png;base64,/, "");
     const buffer = Buffer.from(base64Data, 'base64');
     const contentType = 'image/png';
@@ -60,20 +57,17 @@ export async function submitHostOnboarding(req, res, next) {
       contentType: contentType, size: buffer.length
     };
 
-    // 6. Tạo đối tượng host
     if (!u.host) u.host = {};
     u.host.status = 'pending'; 
     u.host.submittedAt = new Date();
     u.host.reason = undefined;
 
-    // 7. Lưu KYC
     u.host.kyc = {
       fullName: body.fullName,
       dob: body.dob,
       cccdNumber: body.cccdNumber
     };
 
-    // 8. Lưu Payout
     u.host.payout = {
       provider: 'manual',
       bank: {
@@ -84,33 +78,27 @@ export async function submitHostOnboarding(req, res, next) {
       ready: true
     };
 
-    // === SỬA LỖI VALIDATION ===
-    // 9. Tạo policyHash và consent đầy đủ
     const policyHash = crypto.createHash('sha256')
                              .update(body.signature.consent.policyVersion + body.signature.consent.policyKey)
                              .digest('hex');
     
     const completeConsent = {
       ...body.signature.consent,
-      policyHash: policyHash, // Thêm policyHash
-      acceptedAt: new Date()    // Thêm acceptedAt
+      policyHash: policyHash, 
+      acceptedAt: new Date()    
     };
 
-    // 10. Lưu Chữ Ký (với FileRefSchema từ S3)
     u.host.agreement = {
-      acceptedAt: new Date(), // Cái này ở top-level (theo HostAgreementSchema)
+      acceptedAt: new Date(), 
       signature: {
-        image: signatureFileRef, // <-- LƯU ĐỐI TƯỢNG S3
-        consent: completeConsent, // <-- Dùng object đã bổ sung
+        image: signatureFileRef, 
+        consent: completeConsent, 
         ip: body.signature.ip || req.ip,
         userAgent: body.signature.userAgent || req.headers['user-agent'],
         signedAt: new Date()
       },
       version: body.signature.consent.policyVersion
     };
-    // === KẾT THÚC SỬA LỖI VALIDATION ===
-    
-    // 11. Cập nhật các bước
     u.host.onboardingSteps = {
       kycSubmitted: true,
       payoutLinked: true,
@@ -131,35 +119,25 @@ export async function submitHostOnboarding(req, res, next) {
 export async function getMyPayoutStats(req, res, next) {
   try {
     const hostId = req.user._id;
-
-    // 1. Lấy tất cả các khoản thanh toán (Settlement) của Host này
-    // Sắp xếp mới nhất lên đầu để dễ nhìn
     const settlements = await HostSettlement.find({ hostId })
       .populate('batchId', 'month year fromDate toDate') // Lấy thông tin tháng/năm từ Batch cha
       .sort({ createdAt: -1 });
-
-    // 2. Phân loại dữ liệu để trả về Frontend
-    let nextPayoutAmount = 0; // Số tiền sắp nhận (đang pending)
+    let nextPayoutAmount = 0;
     const history = [];
 
     for (const item of settlements) {
       const batch = item.batchId;
       if (!batch) continue;
 
-      // Format dữ liệu lịch sử
       history.push({
         id: item._id,
-        // Hiển thị tên kỳ thanh toán: "Tháng 10/2023"
         batchName: `Tháng ${batch.month}/${batch.year}`,
         period: `${new Date(batch.fromDate).toLocaleDateString('vi-VN')} - ${new Date(batch.toDate).toLocaleDateString('vi-VN')}`,
-        amount: item.payoutAmount, // Số tiền thực nhận (đã trừ phí)
-        status: item.status,       // 'pending' hoặc 'paid'
-        paidAt: item.paidAt,       // Ngày Admin chuyển khoản (nếu có)
-        totalBookings: item.totalBookings // Số đơn trong kỳ này
+        amount: item.payoutAmount, 
+        status: item.status,       
+        paidAt: item.paidAt,   
+        totalBookings: item.totalBookings 
       });
-
-      // Nếu đang pending -> Cộng dồn vào "Sắp thanh toán"
-      // (Thường mỗi tháng chỉ có 1 settlement pending, nhưng cộng dồn cho chắc)
       if (item.status === 'pending') {
         nextPayoutAmount += item.payoutAmount;
       }
@@ -174,53 +152,146 @@ export async function getMyPayoutStats(req, res, next) {
     next(e);
   }
 }
+// export const getHostRevenueStats = async (req, res, next) => {
+//   try {
+//     const hostId = req.user._id;
+//     const selectedYear = parseInt(req.query.year) || new Date().getFullYear();
+
+//     const projectNetRevenue = {
+//         $project: {
+//           year: { $year: "$checkoutDate" },
+//           month: { $month: "$checkoutDate" },
+//           // Công thức tính tiền thực nhận (95% của Net Revenue)
+//           netPayout: { 
+//              $multiply: [
+//                { $subtract: ["$pricing.total", { $ifNull: ["$refund.refundAmount", 0] }] },
+//                0.95 
+//              ]
+//           }
+//         }
+//     };
+
+//     const matchStage = {
+//       hostId: hostId,
+//       status: { $in: ['paid', 'completed', 'refunded', 'cancelled_by_guest', 'cancelled_by_host'] },
+//       checkoutDate: { $exists: true }
+//     };
+
+//     const stats = await Booking.aggregate([
+//       { $match: matchStage },
+//       projectNetRevenue,
+//       {
+//          $facet: {
+//             // 1. Lấy danh sách TẤT CẢ các năm có doanh thu (để làm Dropdown)
+//             availableYears: [
+//                { $group: { _id: "$year" } },
+//                { $sort: { _id: -1 } } // Năm mới nhất lên đầu
+//             ],
+//             // 2. Tính tổng doanh thu CỦA NĂM ĐƯỢC CHỌN
+//             totalForYear: [
+//                { $match: { year: selectedYear } },
+//                { $group: { _id: null, total: { $sum: "$netPayout" }, count: { $sum: 1 } } }
+//             ],
+//             // 3. Biểu đồ theo tháng CỦA NĂM ĐƯỢC CHỌN
+//             monthly: [
+//                { $match: { year: selectedYear } },
+//                {
+//                  $group: {
+//                    _id: "$month", 
+//                    revenue: { $sum: "$netPayout" },
+//                    count: { $sum: 1 }
+//                  }
+//                },
+//                { $sort: { _id: 1 } }
+//             ]
+//          }
+//       }
+//     ]);
+
+//     const availableYears = stats[0].availableYears.map(y => y._id);
+//     // Nếu chưa có năm nào, mặc định trả về năm nay
+//     if (availableYears.length === 0) availableYears.push(new Date().getFullYear());
+
+//     const totalData = stats[0].totalForYear[0] || { total: 0, count: 0 };
+//     const monthlyData = stats[0].monthly || [];
+
+//     // Format dữ liệu biểu đồ (đủ 12 tháng)
+//     const chartData = Array.from({ length: 12 }, (_, i) => {
+//       const month = i + 1;
+//       const found = monthlyData.find(m => m._id === month);
+//       return {
+//         name: `T${month}`,
+//         revenue: found ? Math.round(found.revenue) : 0,
+//         bookings: found ? found.count : 0
+//       };
+//     });
+
+//     res.json({
+//       selectedYear,
+//       availableYears, // Danh sách năm [2025, 2024...]
+//       totalRevenue: Math.round(totalData.total), // Tổng của năm chọn
+//       totalBookings: totalData.count,
+//       chartData
+//     });
+
+//   } catch (e) {
+//     next(e);
+//   }
+// };
+
 export const getHostRevenueStats = async (req, res, next) => {
   try {
     const hostId = req.user._id;
-    // Lấy năm từ request, nếu không có thì lấy năm hiện tại
-    const selectedYear = parseInt(req.query.year) || new Date().getFullYear();
+    const { year, month } = req.query;
 
-    const projectNetRevenue = {
+    const currentYear = new Date().getFullYear();
+    const selectedYear = year && !isNaN(Number(year)) ? Number(year) : currentYear;
+    
+    let selectedMonth = null;
+    if (month && month !== 'all' && !isNaN(Number(month))) {
+        selectedMonth = Number(month);
+    }
+    let startDate, endDate;
+    if (selectedMonth) {
+        startDate = new Date(selectedYear, selectedMonth - 1, 1, 0, 0, 0);
+        endDate = new Date(selectedYear, selectedMonth, 0, 23, 59, 59, 999);
+    } else {
+        startDate = new Date(selectedYear, 0, 1, 0, 0, 0);
+        endDate = new Date(selectedYear, 11, 31, 23, 59, 59, 999);
+    }
+
+    const dateConfig = { date: "$checkoutDate", timezone: "Asia/Ho_Chi_Minh" };
+    const groupId = selectedMonth ? { $dayOfMonth: dateConfig } : { $month: dateConfig };
+    const stats = await Booking.aggregate([
+      { 
+        $match: {
+          hostId: hostId,
+          status: { $in: ['paid', 'completed', 'refunded', 'cancelled_by_guest', 'cancelled_by_host'] },
+          checkoutDate: { $gte: startDate, $lte: endDate }
+        } 
+      },
+      {
         $project: {
-          year: { $year: "$checkoutDate" },
-          month: { $month: "$checkoutDate" },
-          // Công thức tính tiền thực nhận (95% của Net Revenue)
           netPayout: { 
              $multiply: [
                { $subtract: ["$pricing.total", { $ifNull: ["$refund.refundAmount", 0] }] },
                0.95 
              ]
-          }
+          },
+          checkoutDate: 1
         }
-    };
-
-    const matchStage = {
-      hostId: hostId,
-      status: { $in: ['paid', 'completed', 'refunded', 'cancelled_by_guest', 'cancelled_by_host'] },
-      checkoutDate: { $exists: true }
-    };
-
-    const stats = await Booking.aggregate([
-      { $match: matchStage },
-      projectNetRevenue,
+      },
+      { $match: { netPayout: { $gt: 0 } } }, 
       {
          $facet: {
-            // 1. Lấy danh sách TẤT CẢ các năm có doanh thu (để làm Dropdown)
-            availableYears: [
-               { $group: { _id: "$year" } },
-               { $sort: { _id: -1 } } // Năm mới nhất lên đầu
-            ],
-            // 2. Tính tổng doanh thu CỦA NĂM ĐƯỢC CHỌN
-            totalForYear: [
-               { $match: { year: selectedYear } },
+            summary: [
                { $group: { _id: null, total: { $sum: "$netPayout" }, count: { $sum: 1 } } }
             ],
-            // 3. Biểu đồ theo tháng CỦA NĂM ĐƯỢC CHỌN
-            monthly: [
-               { $match: { year: selectedYear } },
+            // Dữ liệu biểu đồ
+            chart: [
                {
                  $group: {
-                   _id: "$month", 
+                   _id: groupId, 
                    revenue: { $sum: "$netPayout" },
                    count: { $sum: 1 }
                  }
@@ -230,30 +301,39 @@ export const getHostRevenueStats = async (req, res, next) => {
          }
       }
     ]);
+    const result = stats[0];
+    const summary = result.summary[0] || { total: 0, count: 0 };
+    const rawChart = result.chart || [];
+    let chartData = [];
 
-    const availableYears = stats[0].availableYears.map(y => y._id);
-    // Nếu chưa có năm nào, mặc định trả về năm nay
-    if (availableYears.length === 0) availableYears.push(new Date().getFullYear());
-
-    const totalData = stats[0].totalForYear[0] || { total: 0, count: 0 };
-    const monthlyData = stats[0].monthly || [];
-
-    // Format dữ liệu biểu đồ (đủ 12 tháng)
-    const chartData = Array.from({ length: 12 }, (_, i) => {
-      const month = i + 1;
-      const found = monthlyData.find(m => m._id === month);
-      return {
-        name: `T${month}`,
-        revenue: found ? Math.round(found.revenue) : 0,
-        bookings: found ? found.count : 0
-      };
-    });
+    if (selectedMonth) {
+        const daysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+        chartData = Array.from({ length: daysInMonth }, (_, i) => {
+            const day = i + 1;
+            const found = rawChart.find(item => item._id === day);
+            return {
+                name: `${day}/${selectedMonth}`,
+                revenue: found ? Math.round(found.revenue) : 0,
+                bookings: found ? found.count : 0
+            };
+        });
+    } else {
+        chartData = Array.from({ length: 12 }, (_, i) => {
+            const m = i + 1;
+            const found = rawChart.find(item => item._id === m);
+            return {
+                name: `T${m}`,
+                revenue: found ? Math.round(found.revenue) : 0,
+                bookings: found ? found.count : 0
+            };
+        });
+    }
 
     res.json({
       selectedYear,
-      availableYears, // Danh sách năm [2025, 2024...]
-      totalRevenue: Math.round(totalData.total), // Tổng của năm chọn
-      totalBookings: totalData.count,
+      selectedMonth: selectedMonth || 'all',
+      totalRevenue: Math.round(summary.total),
+      totalBookings: summary.count,
       chartData
     });
 

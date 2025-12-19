@@ -5,8 +5,10 @@ import { requireRole } from '../middlewares/roles.js';
 import {
   getHostStatus,
   submitHostOnboarding, 
-  getMyPayoutStats
+  getMyPayoutStats,
+  getHostRevenueStats
 } from '../controllers/host.controller.js';
+
 
 
 const router = express.Router();
@@ -21,5 +23,6 @@ router.post(
 );
 
 router.get('/my-stats', authGuard, requireRole('host'), getMyPayoutStats);
+router.get('/revenue-stats', authGuard, requireRole('host'), getHostRevenueStats);
 
 export default router;

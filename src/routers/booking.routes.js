@@ -4,8 +4,7 @@ import {
   createBooking, hostAccept, hostDecline, 
   listMineGuest, listMineHost,
   getBookingById, getBookingByOrderCode,
-  signBooking, getHostDashboardCounts, 
-  getHostRevenueStats, getUnavailableDates,
+  signBooking, getHostDashboardCounts, getUnavailableDates,
   cancelBooking, adminConfirmRefund 
 } from '../controllers/booking.controller.js';
 import { authGuard } from '../middlewares/authGuard.js';
@@ -27,7 +26,6 @@ r.get('/unavailable/:listingId', getUnavailableDates);
 // Guest Routes
 r.post('/', authGuard, requireRole('guest'), express.json(), createBooking);
 r.get('/mine', authGuard, requireRole('guest'), expireStaleAwaiting, listMineGuest);
-// r.post('/:id/pay/initiate', authGuard, requireRole('guest'), express.json(), initiatePayment);
 r.post('/:id/cancel', authGuard, requireRole('guest'), express.json(), cancelBooking);
 r.post('/:id/sign', authGuard, requireRole('guest'), express.json(), signBooking);
 
@@ -37,11 +35,8 @@ r.get('/host/mine', authGuard, requireRole('host'), expireStaleAwaiting, listMin
 r.post('/:id/host-accept', authGuard, requireRole('host'), express.json(), hostAccept);
 r.post('/:id/host-decline', authGuard, requireRole('host'), express.json(), hostDecline);
 r.get('/host/counts', authGuard, requireRole('host'), getHostDashboardCounts);
-r.get('/host/revenue', authGuard, requireRole('host'), getHostRevenueStats);
 
 r.get('/by-order/:orderCode', getBookingByOrderCode);
-
-// Lấy bằng ID (cho trang thanh toán & hợp đồng - VẪN CẦN BẢO MẬT)
 r.get('/:id', authGuard, getBookingById);
 
 r.post('/:id/refund-confirm', authGuard, requireRole('admin'), express.json(), adminConfirmRefund);

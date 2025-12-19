@@ -6,130 +6,9 @@ import {
   updateUserProfileSchema,
   changePasswordSchema,
 } from "../validators/user.schema.js";
-
-// // [HEAD] Hàm lấy thông tin công khai của user bằng ID
-// export const getUserPublicProfileById = async (req, res, next) => {
-//   try {
-//     const userId = req.params.id;
-
-//     // Kiểm tra ID hợp lệ
-//     if (!mongoose.Types.ObjectId.isValid(userId)) {
-//       return res.status(400).json({ message: "Invalid User ID format" });
-//     }
-
-//     // Tìm user và chỉ chọn các trường công khai cần thiết
-//     const user = await User.findById(userId).select(
-//       "first_name last_name picture createdAt host.status"
-//     );
-
-//     if (!user) {
-//       return res.status(404).json({ message: "User not found" });
-//     }
-
-//     res.json(user);
-//   } catch (err) {
-//     console.error("Error fetching user profile:", err);
-//     next(err);
-//   }
-// };
-
-// /**
-//  * Lấy thông tin user hiện tại (đã đăng nhập)
-//  */
-// export const getCurrentUser = async (req, res, next) => {
-//   try {
-//     const userId = req.user._id;
-
-//     const user = await User.findById(userId).select(
-//       "-passwordHash -emailVerification -passwordReset"
-//     );
-
-//     if (!user) {
-//       return res.status(404).json({ message: "User not found" });
-//     }
-
-//     res.json(user);
-//   } catch (err) {
-//     console.error("Error fetching current user:", err);
-//     next(err);
-//   }
-// };
-
-// export const updateUserProfile = async (req, res, next) => {
-//   try {
-//     const userId = req.user._id;
-//     const body = updateUserProfileSchema.parse(req.body);
-
-//     const user = await User.findById(userId);
-//     if (!user) return res.status(404).json({ message: "User not found" });
-//     if (user.status === "deleted")
-//       return res.status(403).json({ message: "Account deleted" });
-//     if (body.picture !== undefined) user.picture = body.picture || null;
-//     if (body.gender !== undefined) user.gender = body.gender;
-//     if (body.phone !== undefined) user.phone = body.phone || null;
-
-//     // Address
-//     if (body.address !== undefined) {
-//       user.address = { ...user.address, ...body.address };
-//     }
-
-//     // 2. Logic Căn cước công dân (CCCD)
-//     // Chỉ cho phép cập nhật nếu user CHƯA có CCCD trong database
-//     if (body.cccdNumber) {
-//       if (!user.cccdNumber) {
-//         // Kiểm tra trùng lặp CCCD với người khác
-//         const duplicate = await User.findOne({
-//           cccdNumber: body.cccdNumber,
-//           _id: { $ne: userId },
-//         });
-//         if (duplicate) {
-//           return res
-//             .status(409)
-//             .json({
-//               message: "Số CCCD này đã được sử dụng bởi tài khoản khác",
-//             });
-//         }
-//         user.cccdNumber = body.cccdNumber;
-//       }
-//       // Nếu user.cccdNumber đã có dữ liệu, ta lờ đi yêu cầu update trường này (hoặc báo lỗi tùy bạn)
-//     }
-
-//     /* LƯU Ý: Theo yêu cầu "trừ Họ tên, ngày sinh", tôi đã REMOVE đoạn cập nhật 
-//        first_name, last_name, dob ở đây. User gửi lên cũng sẽ bị bỏ qua.
-//     */
-
-//     user.updatedBy = userId;
-//     await user.save();
-
-//     const updatedUser = await User.findById(userId).select(
-//       "-passwordHash -emailVerification -passwordReset"
-//     );
-
-//     res.json({
-//       message: "Cập nhật thông tin thành công",
-//       user: updatedUser,
-//     });
-//   } catch (err) {
-//     if (err.name === "ZodError") {
-//       return res.status(400).json({
-//         message: "Validation error",
-//         errors: err.errors,
-//       });
-//     }
-//     if (err.code === 11000 && err.keyPattern?.phone) {
-//       return res.status(400).json({ message: "Số điện thoại này đã tồn tại" });
-//     }
-//     next(err);
-//   }
-// };
-
-// === THÊM IMPORT ĐỂ XỬ LÝ S3 ===
 import { s3 } from '../config/s3.js';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { v4 as uuidv4 } from 'uuid';
-// ===============================
-
-// [HEAD] Hàm lấy thông tin công khai của user bằng ID
 export const getUserPublicProfileById = async (req, res, next) => {
   try {
     const userId = req.params.id;
@@ -174,9 +53,6 @@ export const getCurrentUser = async (req, res, next) => {
 export const updateUserProfile = async (req, res, next) => {
   try {
     const userId = req.user._id;
-    // Lưu ý: Bạn cần cập nhật updateUserProfileSchema trong validators để cho phép trường 'signature' (string, optional)
-    // const body = updateUserProfileSchema.parse(req.body); 
-    // Tạm thời dùng req.body trực tiếp nếu schema chưa update, hoặc update schema sau.
     const body = req.body; 
 
     const user = await User.findById(userId);
@@ -206,8 +82,6 @@ export const updateUserProfile = async (req, res, next) => {
       }
     }
 
-    // === 3. [MỚI] LOGIC CẬP NHẬT CHỮ KÝ ĐIỆN TỬ ===
-    // Kiểm tra: Có gửi chữ ký dạng base64 VÀ user là host
     if (body.signature && body.signature.startsWith('data:image')) {
        // Chỉ host mới được cập nhật chữ ký này (hoặc tùy logic của bạn)
        const isHost = user.roles && user.roles.includes('host');
@@ -250,19 +124,15 @@ export const updateUserProfile = async (req, res, next) => {
               ip: req.ip,
               userAgent: req.headers['user-agent']
             };
-
-            // Nếu user đang trong quá trình onboarding nhưng bị thiếu chữ ký, đánh dấu là đã xong
             if (user.host.onboardingSteps) {
                 user.host.onboardingSteps.agreementSigned = true;
             }
 
           } catch (uploadErr) {
             console.error("Lỗi upload chữ ký s3:", uploadErr);
-            // Không throw lỗi chết app, chỉ log ra, user có thể thử lại sau
           }
        }
     }
-    // ===============================================
 
     user.updatedBy = userId;
     await user.save();
